@@ -119,6 +119,7 @@ D.ApplicationWindow {
                     font.pixelSize: 12
                 }
                 D.ComboBox {
+                    implicitHeight: 28
                     model: ["session", "system"]
                     currentIndex: root.busName === "system" ? 1 : 0
                     implicitWidth: 122

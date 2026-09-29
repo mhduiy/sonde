@@ -359,6 +359,25 @@ void ObjectTree::loadPath(Node *n)
                     m->path = n->path;
                     m->iface = name;
                     m->member = m->name;
+                    // 参数直接写进签名括号里，用另一个颜色标出来，
+                    // 这样不用展开也能看清签名；参数子节点就不再生成了。
+                    const QVariantList args = mm.value(QStringLiteral("args")).toList();
+                    QStringList inParts;
+                    QStringList outParts;
+                    for (const QVariant &av : args) {
+                        const QVariantMap am = av.toMap();
+                        const QString an = am.value(QStringLiteral("name")).toString();
+                        const QString at = am.value(QStringLiteral("type")).toString();
+                        const QString piece = an.isEmpty()
+                                                  ? at
+                                                  : (an + QStringLiteral(": ") + at);
+                        if (am.value(QStringLiteral("direction")).toString()
+                            == QLatin1String("out"))
+                            outParts << piece;
+                        else
+                            inParts << piece;
+                    }
+
                     if (mkind == QLatin1String("property")) {
                         const QString type = mm.value(QStringLiteral("type")).toString();
                         const QString access = mm.value(QStringLiteral("access")).toString();
@@ -368,33 +387,15 @@ void ObjectTree::loadPath(Node *n)
                     } else {
                         m->inSig = mm.value(QStringLiteral("inSig")).toString();
                         m->outSig = mm.value(QStringLiteral("outSig")).toString();
-                        m->detail = QStringLiteral("(") + m->inSig + QStringLiteral(")")
-                                    + (mkind == QLatin1String("method")
-                                           ? (QStringLiteral(" → (") + m->outSig + QStringLiteral(")"))
-                                           : QString());
-                    }
-                    m->detail.replace(QStringLiteral("()"), QString());
-
-                    // 参数作为子节点，层级关系一目了然
-                    const QVariantList args = mm.value(QStringLiteral("args")).toList();
-                    for (int i = 0; i < args.size(); ++i) {
-                        const QVariantMap am = args.at(i).toMap();
-                        auto *a = new Node;
-                        a->id = argId(m->id, i);
-                        a->kind = QStringLiteral("arg");
-                        const QString an = am.value(QStringLiteral("name")).toString();
-                        a->name = an.isEmpty() ? QStringLiteral("arg%1").arg(i) : an;
-                        a->argType = am.value(QStringLiteral("type")).toString();
-                        const QString dir = am.value(QStringLiteral("direction")).toString();
-                        a->access = dir;
-                        a->detail = (dir == QLatin1String("out") ? QStringLiteral("out ")
-                                                                 : QStringLiteral("in "))
-                                    + a->argType;
-                        a->path = n->path;
-                        a->iface = name;
-                        a->member = m->name;
-                        m->children.append(a->id);
-                        m_nodes.insert(a->id, a);
+                        m->argText = inParts.isEmpty()
+                                         ? QString()
+                                         : QStringLiteral("(") + inParts.join(QStringLiteral(", "))
+                                               + QStringLiteral(")");
+                        m->retText = (mkind == QLatin1String("method") && !outParts.isEmpty())
+                                         ? QStringLiteral("→ (")
+                                               + outParts.join(QStringLiteral(", "))
+                                               + QStringLiteral(")")
+                                         : QString();
                     }
 
                     iface->children.append(m->id);
@@ -475,6 +476,8 @@ QVariantMap ObjectTree::rowOf(const Node *n, int depth) const
         { QStringLiteral("iface"), n->iface },
         { QStringLiteral("member"), n->member },
         { QStringLiteral("argType"), n->argType },
+        { QStringLiteral("argText"), n->argText },
+        { QStringLiteral("retText"), n->retText },
         { QStringLiteral("access"), n->access },
         { QStringLiteral("inSig"), n->inSig },
         { QStringLiteral("outSig"), n->outSig },

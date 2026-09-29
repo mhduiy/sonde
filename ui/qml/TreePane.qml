@@ -113,6 +113,7 @@ Rectangle {
                     ToolTip.text: "跳到与服务名对应的对象路径（例如 org.deepin.dde.Timedate1 → /org/deepin/dde/Timedate1）"
                 }
                 D.CheckBox {
+                    implicitHeight: 26
                     text: "精简"
                     checked: tree.hideStandard
                     onToggled: tree.hideStandard = checked
@@ -274,7 +275,7 @@ Rectangle {
                     }
 
                     Label {
-                        Layout.fillWidth: true
+                        Layout.maximumWidth: 300
                         text: row.modelData.name
                         color: theme.text
                         font.family: "monospace"
@@ -282,7 +283,28 @@ Rectangle {
                         elide: Text.ElideRight
                     }
 
+                    // 参数直接写在签名括号里，用另一个颜色标出来
                     Label {
+                        visible: row.modelData.argText !== ""
+                        text: row.modelData.argText
+                        color: theme.accent
+                        font.family: "monospace"
+                        font.pixelSize: 11
+                        elide: Text.ElideRight
+                        Layout.maximumWidth: 320
+                    }
+                    Label {
+                        visible: row.modelData.retText !== ""
+                        text: row.modelData.retText
+                        color: theme.textDim
+                        font.family: "monospace"
+                        font.pixelSize: 11
+                        elide: Text.ElideRight
+                        Layout.maximumWidth: 240
+                    }
+                    // 属性 / 路径这类没有参数拆分的，仍然用 detail
+                    Label {
+                        visible: row.modelData.argText === "" && row.modelData.retText === ""
                         text: row.modelData.detail
                         color: theme.textDim
                         font.family: "monospace"
@@ -290,6 +312,9 @@ Rectangle {
                         elide: Text.ElideRight
                         Layout.maximumWidth: 240
                     }
+
+                    // 吸收剩余空间，保证上面这些是"紧跟名字"而不是被推到右边
+                    Item { Layout.fillWidth: true }
                 }
 
                 ToolTip.visible: hovered

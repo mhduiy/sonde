@@ -50,6 +50,7 @@ Popup {
                 Item { Layout.fillWidth: true }
 
                 D.CheckBox {
+                    implicitHeight: 26
                     text: "自动换行"
                     checked: codeView.wrap
                     onToggled: codeView.wrap = checked

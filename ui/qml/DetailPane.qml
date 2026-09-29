@@ -280,6 +280,7 @@ Rectangle {
                         }
                         Label { text: "定时读取"; color: theme.textDim; font.pixelSize: 11 }
                         D.ComboBox {
+                            implicitHeight: 28
                             id: pollBox
                             Layout.preferredWidth: 104
                             model: ["关闭", "1 秒", "2 秒", "5 秒"]
@@ -359,6 +360,7 @@ Rectangle {
                                 spacing: 6
 
                                 D.TextField {
+                                    implicitHeight: 28
                                     id: writeField
                                     Layout.fillWidth: true
                                     placeholderText: "新值"

@@ -427,7 +427,7 @@ ColumnLayout {
                             delegate: TextField {
                                 required property int index
                                 width: root.cellWidth(tblock.info, index)
-                                height: 26
+                                height: 28
                                 text: root.cellText(tblock.p, trow.index, index)
                                 placeholderText: index === 0 && tblock.info.kind === "dict"
                                                  ? "键" : "值"
@@ -495,6 +495,7 @@ ColumnLayout {
                     }
 
                     D.TextField {
+                        implicitHeight: 28
                         Layout.fillWidth: true
                         visible: !editRow.row.composite && editRow.row.node.kind !== "variant"
                         text: editRow.row.node.text !== undefined
@@ -510,6 +511,7 @@ ColumnLayout {
                         spacing: 4
                         visible: editRow.row.node.kind === "variant"
                         D.TextField {
+                            implicitHeight: 28
                             Layout.preferredWidth: 64
                             text: editRow.row.node.text || "s"
                             placeholderText: "内层签名"

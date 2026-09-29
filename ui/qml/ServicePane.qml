@@ -95,6 +95,7 @@ Rectangle {
                 }
 
                 D.TextField {
+                    implicitHeight: 28
                     Layout.fillWidth: true
                     placeholderText: "搜索服务名"
                     onTextChanged: root.query = text

@@ -74,6 +74,7 @@ Rectangle {
                 }
 
                 D.Switch {
+                    implicitHeight: 26
                     text: "只看监听列表"
                     checked: bridge.onlyWatched
                     onToggled: bridge.onlyWatched = checked

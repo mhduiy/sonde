@@ -62,6 +62,9 @@ int main(int argc, char *argv[])
                                      QStringLiteral("name"), QString());
     QCommandLineOption expandJsonOpt(QStringLiteral("expand-json"),
                                      QStringLiteral("JSON 值默认展开显示（自检/截图用）"));
+    QCommandLineOption forceTabOpt(QStringLiteral("force-tab"),
+                                   QStringLiteral("强制输出页签 table|json|text（自检/截图用）"),
+                                   QStringLiteral("name"), QString());
     QCommandLineOption shotOpt(QStringLiteral("screenshot"),
                                QStringLiteral("渲染一帧后保存为 PNG 并退出"),
                                QStringLiteral("path"));
@@ -93,6 +96,7 @@ int main(int argc, char *argv[])
     parser.addOption(demoSeedOpt);
     parser.addOption(demoMethodOpt);
     parser.addOption(expandJsonOpt);
+    parser.addOption(forceTabOpt);
     parser.addOption(shotOpt);
     parser.addOption(delayOpt);
     parser.addOption(dumpOpt);
@@ -142,6 +146,8 @@ int main(int argc, char *argv[])
                                             parser.value(demoMethodOpt));
     engine.rootContext()->setContextProperty(QStringLiteral("jsonExpanded"),
                                             parser.isSet(expandJsonOpt));
+    engine.rootContext()->setContextProperty(QStringLiteral("forceTab"),
+                                            parser.value(forceTabOpt));
 
     engine.load(QUrl::fromLocalFile(QStringLiteral(SONDE_QML_DIR) + QStringLiteral("/main.qml")));
     if (engine.rootObjects().isEmpty()) {

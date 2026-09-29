@@ -21,8 +21,12 @@ ColumnLayout {
 
     spacing: 6
 
+    /// 结构化视图用的 JSON 文本：
+    /// - 字符串里装 JSON → 用**格式化后**的（deepin 接口返回的通常是压缩 JSON，
+    ///   直接用原文就变成挤成一行，看不出来结构）
+    /// - 其它 → 由值节点序列化（已经带缩进）
     readonly property string jsonText:
-        root.innerParsed !== null ? root.rawStringValue
+        root.innerParsed !== null ? JSON.stringify(root.innerParsed, null, 4)
         : (root.nodes.length > 0
            ? (root.nodes.length === 1 ? bridge.nodeToJson(root.nodes[0])
                                       : bridge.nodesToJson(root.nodes))
@@ -138,7 +142,9 @@ ColumnLayout {
         return Math.max(120, w)
     }
 
-    readonly property string defaultTab: tableable ? "table" : (parsed !== null ? "json" : "text")
+    readonly property string defaultTab:
+        (typeof forceTab !== "undefined" && forceTab !== "") ? forceTab
+        : (tableable ? "table" : (parsed !== null ? "json" : "text"))
     readonly property var tabNames: ["table", "json", "text"]
     readonly property string activeTab: root.tab !== "" ? root.tab : root.defaultTab
     readonly property int activeIndex: Math.max(0, tabNames.indexOf(activeTab))

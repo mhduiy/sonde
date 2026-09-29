@@ -69,6 +69,8 @@ private:
         QString member;
         QString argType;
         QString access;
+        QString argText;   // 参数（写进签名括号，带名字）
+        QString retText;   // 返回值
         QString inSig;
         QString outSig;
         QStringList children;

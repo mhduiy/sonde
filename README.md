@@ -39,7 +39,9 @@
 1. 左边**搜索 + 点一个服务** → 中间树会**自动定位到与服务名对应的对象路径**
    （`org.deepin.dde.Timedate1` → `/org/deepin/dde/Timedate1`），并且把它自己的接口一起展开，
    方法/信号/属性直接就在眼前。不用在几十个兄弟对象里翻找。
-2. 中间**单击**选中；**双击**有子节点的就展开/收起，双击属性就直接读值
+2. 中间**单击**选中；**双击**有子节点的就展开/收起，双击属性就直接读值。
+   **方法的参数直接写在签名括号里并带名字**（`List (ty: s) → (list: s)`），
+   参数用一种颜色、返回值用另一种，不展开也能看清签名；参数不再额外生成子节点。
 3. **点一个方法** → 右边出现签名驱动的参数表单，填完「发送调用」。
    参数是**记录形态**时（`a{ss}` / `a{sd}` 这类字典，或"字段全是标量"的结构体数组）
    会自动改用**可编辑表格**：表头是列名，每行一个条目，「＋ 加一行」「✕」增删，
@@ -271,9 +273,16 @@ D.ApplicationWindow {
 会打印 `Failed to enable NoTitlebar for the window`——**这条日志本身就是机制生效的证据**，
 实机上会设置成功，于是只剩 DTK 那一条标题栏。
 
----
+### 7. 我把 JSON 显示改回退了
 
-## 构建与运行
+`ValueOutput` 里为了让"文本"页签显示原文，我把 `jsonText` 写成了用**字符串原文**。
+但 deepin 接口返回的是**压缩 JSON**（没有换行缩进），于是 JSON 页签变成挤成一行、
+行号只有 1 —— 看起来就像"JSON 被我改坏了"。
+
+正确做法：结构化视图（JSON 页签）用 `JSON.stringify(parsed, null, 4)` 重新格式化，
+只有"文本"页签才用原文。同一个数据，两个页签各取所需。
+
+---
 
 依赖：Qt 6.8（含 QuickControls2）、Rust 工具链、cmake + ninja。
 
@@ -293,6 +302,7 @@ D.ApplicationWindow {
 --demo-method <name>    自检时优先选中的方法或属性名
 --demo-seed <value>     自检时给第一个字符串参数填的值
 --expand-json           JSON 值默认展开（自检/截图用）
+--force-tab <name>      强制输出页签 table|json|text（自检/截图用）
 --dump-tree             打印对象树的行（id/kind/name/depth）后退出，调试树结构用
 --screenshot <path>     渲染一帧保存 PNG 后退出
 --screenshot-delay <ms> 截图前等待毫秒数
