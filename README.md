@@ -317,6 +317,7 @@ D.ApplicationWindow {
 --demo-seed <value>     自检时给第一个字符串参数填的值
 --expand-json           JSON 值默认展开（自检/截图用）
 --force-tab <name>      强制输出页签 table|json|text（自检/截图用）
+--size <WxH>            初始窗口尺寸，例如 1000x640（自检/截图用）
 --dump-tree             打印对象树的行（id/kind/name/depth）后退出，调试树结构用
 --screenshot <path>     渲染一帧保存 PNG 后退出
 --screenshot-delay <ms> 截图前等待毫秒数

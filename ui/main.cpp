@@ -65,6 +65,9 @@ int main(int argc, char *argv[])
     QCommandLineOption forceTabOpt(QStringLiteral("force-tab"),
                                    QStringLiteral("强制输出页签 table|json|text（自检/截图用）"),
                                    QStringLiteral("name"), QString());
+    QCommandLineOption sizeOpt(QStringLiteral("size"),
+                               QStringLiteral("初始窗口尺寸 WxH（自检/截图用）"),
+                               QStringLiteral("WxH"), QString());
     QCommandLineOption shotOpt(QStringLiteral("screenshot"),
                                QStringLiteral("渲染一帧后保存为 PNG 并退出"),
                                QStringLiteral("path"));
@@ -97,6 +100,7 @@ int main(int argc, char *argv[])
     parser.addOption(demoMethodOpt);
     parser.addOption(expandJsonOpt);
     parser.addOption(forceTabOpt);
+    parser.addOption(sizeOpt);
     parser.addOption(shotOpt);
     parser.addOption(delayOpt);
     parser.addOption(dumpOpt);
@@ -148,6 +152,18 @@ int main(int argc, char *argv[])
                                             parser.isSet(expandJsonOpt));
     engine.rootContext()->setContextProperty(QStringLiteral("forceTab"),
                                             parser.value(forceTabOpt));
+    // 窗口尺寸（自检用）：WxH
+    int initialW = 0;
+    int initialH = 0;
+    if (parser.isSet(sizeOpt)) {
+        const QStringList wh = parser.value(sizeOpt).split(QLatin1Char('x'));
+        if (wh.size() == 2) {
+            initialW = wh.at(0).toInt();
+            initialH = wh.at(1).toInt();
+        }
+    }
+    engine.rootContext()->setContextProperty(QStringLiteral("initialWidth"), initialW);
+    engine.rootContext()->setContextProperty(QStringLiteral("initialHeight"), initialH);
 
     engine.load(QUrl::fromLocalFile(QStringLiteral(SONDE_QML_DIR) + QStringLiteral("/main.qml")));
     if (engine.rootObjects().isEmpty()) {

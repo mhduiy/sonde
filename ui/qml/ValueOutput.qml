@@ -187,19 +187,19 @@ ColumnLayout {
 
             TabButton {
                 text: "表格"
-                implicitWidth: 64
+                implicitWidth: 56
                 enabled: root.tableable
                 onClicked: root.tab = "table"
             }
             TabButton {
                 text: "JSON"
-                implicitWidth: 64
+                implicitWidth: 56
                 enabled: root.parsed !== null
                 onClicked: root.tab = "json"
             }
             TabButton {
                 text: "文本"
-                implicitWidth: 64
+                implicitWidth: 56
                 onClicked: root.tab = "text"
             }
         }
@@ -207,13 +207,13 @@ ColumnLayout {
         Item { Layout.fillWidth: true }
 
         Label {
-            visible: root.activeTab === "table"
+            visible: root.activeTab === "table" && root.width > 380
             text: root.table.rows.length + " 行 × " + root.table.cols.length + " 列"
             color: theme.textFaint
             font.pixelSize: 10
         }
         Label {
-            visible: root.activeTab === "json"
+            visible: root.activeTab === "json" && root.width > 380
             text: bridge.jsonLines(root.jsonText, root.jsonColors()).length + " 行"
             color: theme.textFaint
             font.pixelSize: 10
@@ -221,12 +221,14 @@ ColumnLayout {
 
         D.ToolButton {
             text: "放大"
+            implicitWidth: 46
             implicitHeight: 22
             visible: root.activeTab !== "text"
             onClicked: viewer.open()
         }
         D.ToolButton {
             text: "复制"
+            implicitWidth: 46
             implicitHeight: 22
             onClicked: {
                 if (root.activeTab === "json")

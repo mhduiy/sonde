@@ -7,10 +7,10 @@ D.ApplicationWindow {
     id: root
 
     visible: true
-    width: 1480
-    height: 920
-    minimumWidth: 1000
-    minimumHeight: 640
+    width: (typeof initialWidth !== "undefined" && initialWidth > 0) ? initialWidth : 1480
+    height: (typeof initialHeight !== "undefined" && initialHeight > 0) ? initialHeight : 920
+    minimumWidth: 880
+    minimumHeight: 600
     title: "Sonde — D-Bus 观察台"
 
     // ---- DTK 窗口（参照 dde-control-center 的 DccWindow.qml）----
@@ -211,8 +211,8 @@ D.ApplicationWindow {
             }
 
             ServicePane {
-                SplitView.preferredWidth: 288
-                SplitView.minimumWidth: 200
+                SplitView.preferredWidth: 276
+                SplitView.minimumWidth: 180
                 bus: root.busName
                 onServiceActivated: (dest) => {
                     tree.setService(root.busName, dest)
@@ -223,15 +223,15 @@ D.ApplicationWindow {
             TreePane {
                 id: treePane
                 SplitView.fillWidth: true
-                SplitView.minimumWidth: 380
+                SplitView.minimumWidth: 300
                 onNodeSelected: (row) => { root.selectedNode = row }
                 onReadPropertyRequested: (n) => detailPane.readProperty(n)
             }
 
             DetailPane {
                 id: detailPane
-                SplitView.preferredWidth: 460
-                SplitView.minimumWidth: 340
+                SplitView.preferredWidth: 440
+                SplitView.minimumWidth: 320
                 node: root.selectedNode
                 bus: root.busName
             }

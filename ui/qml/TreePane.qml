@@ -1,7 +1,7 @@
 import QtQuick
 import QtQuick.Controls
-import org.deepin.dtk 1.0 as D
 import QtQuick.Layouts
+import org.deepin.dtk 1.0 as D
 import "kinds.js" as K
 
 /// 中栏：对象树（服务 → 路径 → 接口 → 方法/信号/属性）——新界面的主体
@@ -20,6 +20,11 @@ Rectangle {
 
     /// 上次滚动到的 focus 节点，避免用户手动展开时被反复拽走
     property string lastFocus: ""
+
+    function activate(n) {
+        root.selectedId = n.id !== undefined ? n.id : ""
+        root.nodeSelected(n)
+    }
 
     function scrollToFocus() {
         var rows = tree.rows
@@ -41,13 +46,26 @@ Rectangle {
         }
     }
 
-    function activate(n) {
-        root.selectedId = n.id !== undefined ? n.id : ""
-        root.nodeSelected(n)
+    function esc(t) {
+        return ("" + t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    }
+
+    /// 签名的纯文本形式（参数 + 返回值），整体用一种颜色显示
+    function sigPlain(m) {
+        var parts = []
+        if (m.argText !== undefined && m.argText !== "")
+            parts.push(m.argText)
+        if (m.retText !== undefined && m.retText !== "")
+            parts.push(m.retText)
+        if (parts.length === 0)
+            return (m.detail !== undefined) ? m.detail : ""
+        return parts.join("  ")
     }
 
     function buildTooltip(n) {
         var s = K.label(n.kind) + "   " + n.name + "\n"
+        if (n.argText) s += "参数:  " + n.argText + "\n"
+        if (n.retText) s += "返回:  " + n.retText + "\n"
         if (n.path) s += "路径:  " + n.path + "\n"
         if (n.iface) s += "接口:  " + n.iface + "\n"
         if (n.member) s += "成员:  " + n.member + "\n"
@@ -63,7 +81,7 @@ Rectangle {
         // ---------------------------------------------------------- 标题栏
         Rectangle {
             Layout.fillWidth: true
-            implicitHeight: 34
+            implicitHeight: 36
             color: theme.surfaceAlt
 
             RowLayout {
@@ -73,76 +91,48 @@ Rectangle {
                 spacing: 6
 
                 Label {
+                    Layout.fillWidth: true
+                    Layout.minimumWidth: 40
                     text: tree.service === "" ? "对象树" : tree.service
                     color: theme.text
                     font.bold: true
                     font.pixelSize: 12
                     elide: Text.ElideMiddle
-                    Layout.maximumWidth: 360
-                }
-                Rectangle {
-                    visible: tree.service !== ""
-                    implicitWidth: 76
-                    implicitHeight: 15
-                    radius: 2
-                    color: theme.accentSoft
-                    Label {
-                        anchors.centerIn: parent
-                        text: tree.bus
-                        color: theme.accent
-                        font.pixelSize: 9
-                    }
                 }
 
-                Item { Layout.fillWidth: true }
-
-                D.TextField {
-                    Layout.preferredWidth: 150
-                    implicitHeight: 24
+                TextField {
+                    Layout.preferredWidth: 130
+                    Layout.minimumWidth: 0
+                    Layout.maximumWidth: 150
+                    Layout.fillWidth: true
+                    implicitHeight: 26
                     placeholderText: "过滤本树"
                     font.pixelSize: 11
                     onTextChanged: tree.filter = text
                 }
 
-                D.ToolButton {
-                    text: "定位"
-                    implicitHeight: 24
-                    enabled: tree.service !== ""
-                    onClicked: tree.locateService()
-                    ToolTip.visible: hovered
-                    ToolTip.text: "跳到与服务名对应的对象路径（例如 org.deepin.dde.Timedate1 → /org/deepin/dde/Timedate1）"
-                }
-                D.CheckBox {
-                    implicitHeight: 26
+                CheckBox {
                     text: "精简"
+                    implicitHeight: 26
                     checked: tree.hideStandard
                     onToggled: tree.hideStandard = checked
                     font.pixelSize: 11
                     ToolTip.visible: hovered
-                    ToolTip.text: "隐藏 org.freedesktop.DBus.* 标准接口，只留下服务自己的接口"
+                    ToolTip.text: "隐藏 org.freedesktop.DBus.* 标准接口"
                 }
+
+                // 展开/折叠/定位 这些收进菜单，窄面板才放得下
                 D.ToolButton {
-                    text: "展开"
+                    text: "⋯"
+                    implicitWidth: 28
                     implicitHeight: 24
                     enabled: tree.service !== ""
-                    onClicked: tree.expandAll()
-                }
-                D.ToolButton {
-                    text: "折叠"
-                    implicitHeight: 24
-                    enabled: tree.service !== ""
-                    onClicked: tree.collapseAll()
-                }
-                D.ToolButton {
-                    text: "⟳"
-                    implicitWidth: 26
-                    implicitHeight: 24
-                    enabled: tree.service !== ""
-                    onClicked: tree.refresh()
+                    onClicked: treeMenu.popup()
                     ToolTip.visible: hovered
-                    ToolTip.text: "重新内省这个服务"
+                    ToolTip.text: "更多操作"
                 }
             }
+
             Rectangle {
                 anchors.bottom: parent.bottom
                 width: parent.width
@@ -216,7 +206,7 @@ Rectangle {
                     root.activate(row.modelData)
                 }
 
-                // 双击：属性直接读值；其余节点（路径/接口/方法/信号）都是展开/收起。
+                // 双击：属性直接读值；其余节点展开/收起。
                 // 注意不能用 hasChildren 判断——未加载的节点 children 为空，
                 // 那样双击就毫无反应（用户会以为"点不开"）。
                 onDoubleClicked: {
@@ -237,12 +227,38 @@ Rectangle {
                     }
                 }
 
-                contentItem: RowLayout {
+                // 纯文本 Row + 显式宽度：**elide 对 Text.RichText 无效**，
+                // 富文本标签永远不会省略、只能被父级硬裁。
+                // 所以拆成两个纯文本 Label（名称 / 签名），签名整体用强调色，
+                // 名称宽度用 TextMetrics 量出来，两者都能正确省略。
+                contentItem: Row {
+                    id: rowContent
                     spacing: 6
 
+                    // 量名称宽度（非 Item，Row 会忽略）
+                    TextMetrics {
+                        id: nameMetrics
+                        font.family: "monospace"
+                        font.pixelSize: 12
+                        text: row.modelData.name
+                    }
+                    TextMetrics {
+                        id: badgeMetrics
+                        font.family: "monospace"
+                        font.pixelSize: 9
+                        font.bold: true
+                        text: K.shortLabel(row.modelData.kind)
+                    }
+
+                    readonly property real avail: Math.max(0, row.width - row.leftPadding
+                                                          - row.rightPadding
+                                                          - arrowItem.width - 12
+                                                          - (badgeMetrics.advanceWidth + 10))
+
                     Item {
-                        implicitWidth: 14
-                        implicitHeight: 20
+                        id: arrowItem
+                        width: 14
+                        height: row.height
                         Label {
                             anchors.centerIn: parent
                             text: row.modelData.hasChildren
@@ -258,14 +274,15 @@ Rectangle {
                     }
 
                     Rectangle {
-                        implicitWidth: typeBadge.implicitWidth + 10
-                        implicitHeight: 16
+                        id: badgeRect
+                        width: badgeMetrics.advanceWidth + 10
+                        height: 16
+                        y: (row.height - height) / 2
                         radius: 2
                         color: "transparent"
                         border.width: 1
                         border.color: K.colorFor(theme, row.modelData.kind)
                         Label {
-                            id: typeBadge
                             anchors.centerIn: parent
                             text: K.shortLabel(row.modelData.kind)
                             color: K.colorFor(theme, row.modelData.kind)
@@ -274,53 +291,64 @@ Rectangle {
                         }
                     }
 
+                    // 名称：最多占一半，先省略它还是签名由宽度决定
                     Label {
-                        Layout.maximumWidth: 300
+                        id: nameLabel
+                        width: Math.max(36, Math.min(nameMetrics.advanceWidth + 2,
+                                                     rowContent.avail * 0.55))
+                        height: row.height
+                        verticalAlignment: Text.AlignVCenter
                         text: row.modelData.name
                         color: theme.text
+                        elide: Text.ElideRight
                         font.family: "monospace"
                         font.pixelSize: 12
-                        elide: Text.ElideRight
                     }
 
-                    // 参数直接写在签名括号里，用另一个颜色标出来
+                    // 签名（参数 + 返回值）：整体强调色，占剩下的宽度
                     Label {
-                        visible: row.modelData.argText !== ""
-                        text: row.modelData.argText
+                        width: Math.max(0, rowContent.avail - nameLabel.width
+                                           - rowContent.spacing)
+                        height: row.height
+                        verticalAlignment: Text.AlignVCenter
+                        text: root.sigPlain(row.modelData)
                         color: theme.accent
+                        elide: Text.ElideRight
                         font.family: "monospace"
                         font.pixelSize: 11
-                        elide: Text.ElideRight
-                        Layout.maximumWidth: 320
                     }
-                    Label {
-                        visible: row.modelData.retText !== ""
-                        text: row.modelData.retText
-                        color: theme.textDim
-                        font.family: "monospace"
-                        font.pixelSize: 11
-                        elide: Text.ElideRight
-                        Layout.maximumWidth: 240
-                    }
-                    // 属性 / 路径这类没有参数拆分的，仍然用 detail
-                    Label {
-                        visible: row.modelData.argText === "" && row.modelData.retText === ""
-                        text: row.modelData.detail
-                        color: theme.textDim
-                        font.family: "monospace"
-                        font.pixelSize: 11
-                        elide: Text.ElideRight
-                        Layout.maximumWidth: 240
-                    }
-
-                    // 吸收剩余空间，保证上面这些是"紧跟名字"而不是被推到右边
-                    Item { Layout.fillWidth: true }
                 }
 
                 ToolTip.visible: hovered
                 ToolTip.delay: 900
                 ToolTip.text: root.buildTooltip(row.modelData)
             }
+        }
+    }
+
+    // ------------------------------------------------------------------ 头部菜单
+    Menu {
+        id: treeMenu
+        MenuItem {
+            text: "定位到本服务的对象"
+            enabled: tree.service !== ""
+            onTriggered: tree.locateService()
+        }
+        MenuItem {
+            text: "全部展开"
+            enabled: tree.service !== ""
+            onTriggered: tree.expandAll()
+        }
+        MenuItem {
+            text: "全部折叠"
+            enabled: tree.service !== ""
+            onTriggered: tree.collapseAll()
+        }
+        MenuSeparator {}
+        MenuItem {
+            text: "重新内省"
+            enabled: tree.service !== ""
+            onTriggered: tree.refresh()
         }
     }
 
@@ -348,13 +376,18 @@ Rectangle {
         }
         MenuItem {
             text: root.menuTarget !== null && root.menuTarget.expanded ? "折叠" : "展开"
-            visible: root.menuTarget !== null && root.menuTarget.hasChildren
+            visible: root.menuTarget !== null && root.menuTarget.kind !== "arg"
             onTriggered: tree.toggle(root.menuTarget.id)
         }
         MenuSeparator {}
         MenuItem {
             text: "复制名称"
             onTriggered: clip.put(root.menuTarget ? root.menuTarget.name : "")
+        }
+        MenuItem {
+            text: "复制签名"
+            visible: root.menuTarget !== null && root.menuTarget.argText !== ""
+            onTriggered: clip.put(root.menuTarget.argText + " " + root.menuTarget.retText)
         }
         MenuItem {
             text: "复制路径"

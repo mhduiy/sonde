@@ -59,6 +59,8 @@ Rectangle {
         root.propName = n.member
         root.propError = ""
         root.propRows = []
+        // 必须同时清掉上一次的值，否则切到别的属性时旧值还留在输出框里
+        root.propNode = null
         root.propLastId = bridge.callGetProperty(n.bus || root.bus, n.dest, n.path,
                                                 n.iface, n.member)
     }
@@ -82,7 +84,9 @@ Rectangle {
     onNodeChanged: {
         propError = ""
         propRows = []
+        propNode = null
         propReadAt = ""
+        propName = ""
         writeError = ""
         writeOk = false
         pollMs = 0
