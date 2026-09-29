@@ -6,131 +6,143 @@ ApplicationWindow {
     id: root
 
     visible: true
-    width: 1420
-    height: 880
+    width: 1480
+    height: 920
+    minimumWidth: 1000
+    minimumHeight: 640
     title: "Sonde — D-Bus 观察台"
-    color: "#0f1216"
+    color: theme.bg
 
-    readonly property color bg: "#0f1216"
-    readonly property color panel: "#161b21"
-    readonly property color panelAlt: "#1b2229"
-    readonly property color line: "#242c35"
-    readonly property color fg: "#d7dde4"
-    readonly property color dim: "#7b8794"
-    readonly property color accent: "#4aa8ff"
+    // 共享状态
+    property string query: ""
+    property var selectedNode: null
+    property string activeBus: busBox.currentText
 
-    property var selected: null
+    function selectNode(row) {
+        root.selectedNode = row
+    }
 
     Component.onCompleted: {
-        if (typeof initialTab !== "undefined")
-            tabs.currentIndex = initialTab
         if (typeof initialBus !== "undefined" && initialBus !== "")
             busBox.currentIndex = (initialBus === "system" ? 1 : 0)
-    }
-
-    // 自检/截图用：自动挑一条"参数最丰富"的消息显示出来
-    function pickInterestingMessage() {
-        if (root.selected !== null)
-            return
-        for (var i = msgFilter.count - 1; i >= 0; --i) {
-            var m = msgFilter.at(i)
-            if (m && m.args && m.args.length > 0) {
-                root.selected = m
-                return
+        if (typeof initialService !== "undefined" && initialService !== "")
+            tree.setService(root.activeBus, initialService)
+        if (typeof demoMode !== "undefined" && demoMode) {
+            watchPane.expanded = true
+            bridge.startMonitor(root.activeBus)
+            // 自检/截图用：加一条服务级监听从流里有内容
+            bridge.addWatch("service", root.activeBus, "org.freedesktop.DBus", "", "", "")
+            // 展开第一个接口，再挑一个"带一个字符串参数"的方法
+            // （GetNameOwner 这类），填个值真发一次，验证整条调用链路。
+            var rows = tree.rows
+            for (var i = 0; i < rows.length; ++i) {
+                if (rows[i].kind === "interface") {
+                    tree.toggle(rows[i].id)
+                    break
+                }
+            }
+            rows = tree.rows
+            var picked = null
+            for (var j = 0; j < rows.length; ++j) {
+                if (rows[j].kind === "method" && rows[j].inSig === "s") {
+                    picked = rows[j]
+                    break
+                }
+            }
+            if (picked === null) {
+                for (var k = 0; k < rows.length; ++k) {
+                    if (rows[k].kind === "method") {
+                        picked = rows[k]
+                        break
+                    }
+                }
+            }
+            if (picked !== null) {
+                root.selectedNode = picked
+                treePane.selectedId = picked.id
+                Qt.callLater(function () { detailPane.demoRun("org.freedesktop.DBus") })
             }
         }
-        if (msgFilter.count > 0)
-            root.selected = msgFilter.at(msgFilter.count - 1)
     }
 
-    Connections {
-        target: msgFilter
-        function onRowsInserted() {
-            if (typeof autoSelectFirst !== "undefined" && autoSelectFirst)
-                root.pickInterestingMessage()
-        }
-    }
-
-    function typeColor(t) {
-        if (t === "signal") return "#9ece6a"
-        if (t === "method_call") return "#4aa8ff"
-        if (t === "method_return") return "#e0af68"
-        if (t === "error") return "#e06c75"
-        return dim
-    }
-
-    function typeBadge(t) {
-        if (t === "method_call") return "CALL"
-        if (t === "method_return") return "RET"
-        if (t === "signal") return "SIGNAL"
-        if (t === "error") return "ERROR"
-        return t
-    }
-
+    // ---------------------------------------------------------------- 顶部工具栏
     header: ToolBar {
-        background: Rectangle { color: root.panel }
+        background: Rectangle {
+            color: theme.surface
+            Rectangle {
+                anchors.bottom: parent.bottom
+                width: parent.width
+                height: 1
+                color: theme.border
+            }
+        }
 
         RowLayout {
             anchors.fill: parent
             anchors.leftMargin: 12
             anchors.rightMargin: 12
-            spacing: 8
+            spacing: 10
 
             Label {
-                text: "◉ Sonde"
-                color: root.fg
+                text: "Sonde"
+                color: theme.accent
                 font.bold: true
-                font.pixelSize: 16
+                font.pixelSize: 17
+            }
+            Label {
+                text: "D-Bus 观察台"
+                color: theme.textFaint
+                font.pixelSize: 12
+                Layout.rightMargin: 6
             }
 
+            Rectangle { Layout.preferredWidth: 1; Layout.fillHeight: true; Layout.topMargin: 8; Layout.bottomMargin: 8; color: theme.border }
+
+            Label { text: "总线"; color: theme.textDim; font.pixelSize: 12 }
             ComboBox {
                 id: busBox
                 model: ["session", "system"]
-                Layout.preferredWidth: 118
+                Layout.preferredWidth: 116
+                onActivated: {
+                    if (tree.service !== "")
+                        tree.setService(currentText, tree.service)
+                }
             }
 
             Button {
                 text: bridge.monitoring ? "停止监听" : "开始监听"
                 onClicked: bridge.monitoring
                            ? bridge.stopMonitor()
-                           : bridge.startMonitor(busBox.currentText)
+                           : bridge.startMonitor(root.activeBus)
             }
 
-            Button {
-                enabled: bridge.monitoring
-                text: bridge.paused
-                      ? ("继续" + (bridge.pending > 0 ? " (+" + bridge.pending + ")" : ""))
-                      : "暂停"
-                onClicked: bridge.paused = !bridge.paused
-            }
-
-            Button {
-                text: "清空"
-                onClicked: bridge.clear()
-            }
+            Rectangle { Layout.preferredWidth: 1; Layout.fillHeight: true; Layout.topMargin: 8; Layout.bottomMargin: 8; color: theme.border }
 
             TextField {
                 Layout.fillWidth: true
-                placeholderText: "过滤：type:signal  iface:org.foo  member:Changed   （空格分隔，AND）"
-                onTextChanged: msgFilter.query = text
+                placeholderText: "搜索服务名 / 接口 / 方法 / 信号（同时过滤左侧服务列表和对象树）"
+                onTextChanged: {
+                    root.query = text
+                }
             }
 
-            Label {
-                text: "显示 " + msgFilter.count + " / 收到 " + bridge.total
-                color: root.dim
-                font.family: "monospace"
-                font.pixelSize: 12
+            Button {
+                text: theme.dark ? "☀  浅色" : "☾  深色"
+                onClicked: theme.dark = !theme.dark
             }
         }
     }
 
+    // ---------------------------------------------------------------- 提示条
     Rectangle {
         id: noticeBar
         anchors.top: parent.top
         anchors.left: parent.left
         anchors.right: parent.right
         height: visible ? noticeLabel.implicitHeight + 14 : 0
-        color: "#3a2a1a"
+        color: theme.dark ? "#3a2a1a" : "#fff4e0"
+        border.color: theme.warn
+        border.width: 1
         visible: false
         z: 20
 
@@ -139,13 +151,18 @@ ApplicationWindow {
             anchors.fill: parent
             anchors.margins: 7
             wrapMode: Text.WordWrap
-            color: "#ffd591"
+            color: theme.warn
             text: ""
+        }
+
+        MouseArea {
+            anchors.fill: parent
+            onClicked: noticeBar.visible = false
         }
 
         Timer {
             id: noticeTimer
-            interval: 15000
+            interval: 20000
             onTriggered: noticeBar.visible = false
         }
     }
@@ -153,164 +170,66 @@ ApplicationWindow {
     Connections {
         target: bridge
         function onNotice(level, text) {
-            noticeLabel.text = "⚠  " + text
-            noticeBar.color = level === "error" ? "#3a1f1f" : "#3a2a1a"
-            noticeLabel.color = level === "error" ? "#ffa8a8" : "#ffd591"
+            noticeLabel.text = "⚠  " + text + "    （点击关闭）"
+            noticeLabel.color = level === "error" ? theme.error : theme.warn
+            noticeBar.color = level === "error"
+                             ? (theme.dark ? "#3a1f1f" : "#fdeaea")
+                             : (theme.dark ? "#3a2a1a" : "#fff4e0")
+            noticeBar.border.color = noticeLabel.color
             noticeBar.visible = true
             noticeTimer.restart()
         }
     }
 
-    SplitView {
+    // ---------------------------------------------------------------- 主体
+    ColumnLayout {
         anchors.fill: parent
-        orientation: Qt.Horizontal
+        spacing: 0
 
-        // ------------------------------------------------ 左：消息流
-        Rectangle {
-            SplitView.preferredWidth: 680
-            SplitView.minimumWidth: 380
-            color: root.bg
+        SplitView {
+            id: browseSplit
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            orientation: Qt.Horizontal
 
-            ListView {
-                id: messageList
-                anchors.fill: parent
-                clip: true
-                model: msgFilter
-                reuseItems: true
-                cacheBuffer: 3000
-                ScrollBar.vertical: ScrollBar {}
+            handle: Rectangle {
+                implicitWidth: 1
+                implicitHeight: 1
+                color: theme.border
+            }
 
-                // 只有本来就在底部时才自动跟随，避免用户往上翻时被拽走
-                property bool following: true
-                onMovementEnded: following = atYEnd
-
-                delegate: ItemDelegate {
-                    id: row
-                    required property int index
-                    required property string msgType
-                    required property string member
-                    required property string iface
-                    required property string signature
-                    required property var args
-                    required property var raw
-
-                    width: messageList.width
-                    height: 38
-
-                    highlighted: root.selected !== null
-                                 && root.selected.timestamp_us === raw.timestamp_us
-                                 && root.selected.serial === raw.serial
-
-                    onClicked: root.selected = raw
-
-                    background: Rectangle {
-                        color: row.highlighted
-                               ? "#20303f"
-                               : (index % 2 === 0 ? root.panel : root.panelAlt)
-                    }
-
-                    contentItem: RowLayout {
-                        spacing: 10
-
-                        Item {
-                            Layout.preferredWidth: 84
-                            Layout.fillHeight: true
-
-                            Rectangle {
-                                anchors.verticalCenter: parent.verticalCenter
-                                width: 78
-                                height: 18
-                                radius: 3
-                                color: root.typeColor(row.msgType)
-                                opacity: 0.20
-                            }
-                            Label {
-                                anchors.verticalCenter: parent.verticalCenter
-                                anchors.horizontalCenter: parent.horizontalCenter
-                                text: root.typeBadge(row.msgType)
-                                color: root.typeColor(row.msgType)
-                                font.pixelSize: 10
-                                font.bold: true
-                            }
-                        }
-
-                        Label {
-                            Layout.fillWidth: true
-                            text: row.member !== ""
-                                  ? (row.member + "   " + (row.iface || ""))
-                                  : (row.msgType === "method_return" ? "←  返回" : "—")
-                            color: root.fg
-                            elide: Text.ElideRight
-                            font.family: "monospace"
-                            font.pixelSize: 12
-                        }
-
-                        Label {
-                            text: row.signature
-                            color: root.dim
-                            font.family: "monospace"
-                            font.pixelSize: 11
-                        }
-                    }
+            ServicePane {
+                SplitView.preferredWidth: 268
+                SplitView.minimumWidth: 190
+                query: root.query
+                bus: root.activeBus
+                onServiceActivated: (dest) => {
+                    tree.setService(root.activeBus, dest)
+                    root.selectedNode = null
                 }
+            }
 
-                onCountChanged: if (following) Qt.callLater(positionViewAtEnd)
+            TreePane {
+                id: treePane
+                SplitView.fillWidth: true
+                SplitView.minimumWidth: 380
+                onNodeSelected: (row) => { root.selectedNode = row }
+                onReadPropertyRequested: (n) => detailPane.readProperty(n)
+            }
+
+            DetailPane {
+                id: detailPane
+                SplitView.preferredWidth: 440
+                SplitView.minimumWidth: 320
+                node: root.selectedNode
+                bus: root.activeBus
             }
         }
 
-        // ------------------------------------------------ 右：详情 / 浏览
-        Rectangle {
-            SplitView.fillWidth: true
-            color: root.panel
-
-            ColumnLayout {
-                anchors.fill: parent
-                spacing: 0
-
-                TabBar {
-                    id: tabs
-                    Layout.fillWidth: true
-                    TabButton { text: "消息详情" }
-                    TabButton { text: "总线浏览" }
-                    TabButton { text: "方法调用" }
-                }
-
-                StackLayout {
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
-                    currentIndex: tabs.currentIndex
-
-                    DetailPane {
-                        msg: root.selected
-                        fg: root.fg
-                        dim: root.dim
-                        accent: root.accent
-                        line: root.line
-                    }
-
-                    BrowserPane {
-                        id: browserPane
-                        bus: busBox.currentText
-                        fg: root.fg
-                        dim: root.dim
-                        accent: root.accent
-                        line: root.line
-                        onMethodChosen: (dest, path, iface, member, inSig) => {
-                            callPane.loadFrom(dest, path, iface, member, inSig)
-                            tabs.currentIndex = 2
-                        }
-                    }
-
-                    CallPane {
-                        id: callPane
-                        bus: busBox.currentText
-                        fg: root.fg
-                        dim: root.dim
-                        accent: root.accent
-                        line: root.line
-                    }
-                }
-            }
+        WatchPane {
+            id: watchPane
+            Layout.fillWidth: true
+            bus: root.activeBus
         }
     }
 }

@@ -1,8 +1,9 @@
 #pragma once
 
-#include <QObject>
 #include <QByteArray>
+#include <QHash>
 #include <QList>
+#include <QObject>
 #include <QString>
 #include <QStringList>
 #include <QVariantList>
@@ -33,18 +34,20 @@ void sonde_monitor_stop(SondeCore *);
 
 /// 界面与 Rust 核心之间唯一的桥。
 ///
-/// 线程规则：Rust 的回调都在**非 GUI 线程**触发，桥接层一律用
-/// `Qt::QueuedConnection` 投递回 GUI 线程后才碰模型，绝不在 Rust 线程里碰 QObject。
+/// 线程规则：Rust 的回调都在非 GUI 线程触发，一律用 `Qt::QueuedConnection`
+/// 投递回 GUI 线程后才碰模型。
 class Bridge : public QObject
 {
     Q_OBJECT
     Q_PROPERTY(MessageModel *messages READ messages CONSTANT)
     Q_PROPERTY(MessageFilter *filter READ filter CONSTANT)
     Q_PROPERTY(bool monitoring READ monitoring NOTIFY monitoringChanged)
-    Q_PROPERTY(QString bus READ bus NOTIFY monitoringChanged)
     Q_PROPERTY(bool paused READ paused WRITE setPaused NOTIFY pausedChanged)
     Q_PROPERTY(int pending READ pending NOTIFY pendingChanged)
     Q_PROPERTY(int total READ total NOTIFY totalChanged)
+    Q_PROPERTY(int matched READ matched NOTIFY totalChanged)
+    Q_PROPERTY(QVariantList watches READ watches NOTIFY watchesChanged)
+    Q_PROPERTY(bool onlyWatched READ onlyWatched WRITE setOnlyWatched NOTIFY onlyWatchedChanged)
 
 public:
     explicit Bridge(QObject *parent = nullptr);
@@ -53,11 +56,14 @@ public:
     MessageModel *messages() { return &m_model; }
     MessageFilter *filter() { return &m_filter; }
     bool monitoring() const { return m_monitoring; }
-    QString bus() const { return m_bus; }
     bool paused() const { return m_paused; }
     void setPaused(bool p);
     int pending() const { return static_cast<int>(m_pending.size()); }
     int total() const { return m_total; }
+    int matched() const { return m_matched; }
+    QVariantList watches() const { return m_watches; }
+    bool onlyWatched() const { return m_onlyWatched; }
+    void setOnlyWatched(bool v);
 
     Q_INVOKABLE void startMonitor(const QString &bus);
     Q_INVOKABLE void stopMonitor();
@@ -68,13 +74,33 @@ public:
     Q_INVOKABLE QVariantMap introspectTree(const QString &bus, const QString &dest,
                                            const QString &path);
     Q_INVOKABLE QVariantList typeTree(const QString &sig);
+    Q_INVOKABLE QVariantList flattenNodes(const QVariantList &nodes) const;
+
+    /// 发起方法调用；返回调用 id（结果通过 callFinished 回传）
     Q_INVOKABLE quint64 call(const QString &bus, const QString &dest, const QString &path,
                              const QString &iface, const QString &member,
                              const QString &sig, const QVariantList &args);
+
+    /// 读取属性（内部走 org.freedesktop.DBus.Properties.Get）
+    Q_INVOKABLE quint64 callGetProperty(const QString &bus, const QString &dest,
+                                        const QString &path, const QString &iface,
+                                        const QString &prop);
+
+    /// 读取接口的全部属性（Properties.GetAll）
+    Q_INVOKABLE quint64 callGetAllProperties(const QString &bus, const QString &dest,
+                                             const QString &path, const QString &iface);
+
+    // ---- 监听列表 ----
+    Q_INVOKABLE bool addWatch(const QString &kind, const QString &bus, const QString &dest,
+                              const QString &path, const QString &iface,
+                              const QString &member);
+    Q_INVOKABLE void removeWatch(int index);
+    Q_INVOKABLE void clearWatches();
+    Q_INVOKABLE bool isWatched(const QString &kind, const QString &dest, const QString &path,
+                               const QString &iface, const QString &member) const;
+
     Q_INVOKABLE QString messageToText(const QVariantMap &msg) const;
     Q_INVOKABLE QString nodeToText(const QVariantMap &node, int indent = 0) const;
-    /// 把值树拍平成带 depth 的行，界面用非递归列表渲染（QML 不允许组件自递归）。
-    Q_INVOKABLE QVariantList flattenNodes(const QVariantList &nodes) const;
 
 public slots:
     void handleBatch(const QByteArray &payload);
@@ -85,11 +111,19 @@ signals:
     void pausedChanged();
     void pendingChanged();
     void totalChanged();
+    void watchesChanged();
+    void onlyWatchedChanged();
     void callFinished(quint64 id, const QVariantMap &result);
+    void propertyRead(quint64 id, const QVariantMap &node, const QString &iface,
+                      const QString &name, const QString &error);
     void notice(const QString &level, const QString &text);
 
 private:
+    quint64 dispatchCall(const QString &bus, const QString &dest, const QString &path,
+                         const QString &iface, const QString &member, const QString &sig,
+                         const QVariantList &args, int kind);
     void flushPending();
+    bool matchesWatch(const QVariantMap &msg) const;
 
     SondeCore *m_core = nullptr;
     MessageModel m_model;
@@ -98,6 +132,11 @@ private:
     bool m_paused = false;
     QString m_bus = QStringLiteral("session");
     QList<QVariantMap> m_pending;
+    QVariantList m_watches;
+    bool m_onlyWatched = false;
     quint64 m_nextCallId = 1;
     int m_total = 0;
+    int m_matched = 0;
+    QHash<quint64, int> m_callKind;            // 0 = call, 1 = getProp, 2 = getAll
+    QHash<quint64, QStringList> m_callMeta;    // getProp 的 (iface, name)
 };

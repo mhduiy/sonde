@@ -23,7 +23,15 @@ QByteArray utf8(const QString &s)
     return s.toUtf8();
 }
 
-/// 解析内省 XML（树形解析，避免 QDomDocument 的已弃用写法）。
+QVariantMap strNode(const QString &s)
+{
+    return QVariantMap{ { QStringLiteral("sig"), QStringLiteral("s") },
+                        { QStringLiteral("kind"), QStringLiteral("str") },
+                        { QStringLiteral("text"), s },
+                        { QStringLiteral("items"), QVariantList{} } };
+}
+
+/// 解析内省 XML（树形解析）。
 QVariantMap parseIntrospection(const QString &xml)
 {
     QVariantList interfaces;
@@ -60,13 +68,18 @@ QVariantMap parseIntrospection(const QString &xml)
     };
 
     QXmlStreamReader r(xml);
+    // depth：-1 表示还没进入任何元素；0 是根 <node>。
+    // 只认根节点的直接子元素，避免把嵌套 subtree 拍平。
+    int depth = -1;
     while (!r.atEnd()) {
         r.readNext();
+
         if (r.isEndElement()) {
-            const QString n = r.name().toString();
-            if (n == QLatin1String("method") || n == QLatin1String("signal"))
+            const QString en = r.name().toString();
+            --depth;
+            if (en == QLatin1String("method") || en == QLatin1String("signal"))
                 flushMember();
-            else if (n == QLatin1String("interface")) {
+            else if (en == QLatin1String("interface")) {
                 interfaces.append(QVariantMap{
                     { QStringLiteral("kind"), QStringLiteral("interface") },
                     { QStringLiteral("name"), ifaceName },
@@ -84,36 +97,54 @@ QVariantMap parseIntrospection(const QString &xml)
         if (!r.isStartElement())
             continue;
 
+        ++depth;
+        if (depth == 0)
+            continue; // 根 <node> 自身
+
         const QString n = r.name().toString();
-        if (n == QLatin1String("node")) {
-            const QString nm = r.attributes().value(QStringLiteral("name")).toString();
-            if (!nm.isEmpty())
-                childNodes.append(QVariantMap{ { QStringLiteral("kind"), QStringLiteral("node") },
-                                               { QStringLiteral("name"), nm } });
-        } else if (n == QLatin1String("interface")) {
-            ifaceName = r.attributes().value(QStringLiteral("name")).toString();
-        } else if (n == QLatin1String("method")) {
-            curMember = QVariantMap{ { QStringLiteral("kind"), QStringLiteral("method") },
-                                     { QStringLiteral("name"),
-                                       r.attributes().value(QStringLiteral("name")).toString() } };
-        } else if (n == QLatin1String("signal")) {
-            curMember = QVariantMap{ { QStringLiteral("kind"), QStringLiteral("signal") },
-                                     { QStringLiteral("name"),
-                                       r.attributes().value(QStringLiteral("name")).toString() } };
-        } else if (n == QLatin1String("arg")) {
+        if (depth == 1) {
+            if (n == QLatin1String("node")) {
+                // 注意：有些实现（例如 UOS 的 dbus-daemon）会在这里给出
+                // 完整相对路径 "org/freedesktop/DBus" 而不是单段名，
+                // 由 ObjectTree 负责拆成中间层级。
+                const QString nm = r.attributes().value(QStringLiteral("name")).toString();
+                if (!nm.isEmpty())
+                    childNodes.append(QVariantMap{
+                        { QStringLiteral("kind"), QStringLiteral("node") },
+                        { QStringLiteral("name"), nm } });
+            } else if (n == QLatin1String("interface")) {
+                ifaceName = r.attributes().value(QStringLiteral("name")).toString();
+            }
+        } else if (depth == 2) {
+            if (n == QLatin1String("method")) {
+                curMember = QVariantMap{
+                    { QStringLiteral("kind"), QStringLiteral("method") },
+                    { QStringLiteral("name"),
+                      r.attributes().value(QStringLiteral("name")).toString() } };
+            } else if (n == QLatin1String("signal")) {
+                curMember = QVariantMap{
+                    { QStringLiteral("kind"), QStringLiteral("signal") },
+                    { QStringLiteral("name"),
+                      r.attributes().value(QStringLiteral("name")).toString() } };
+            } else if (n == QLatin1String("property")) {
+                props.append(QVariantMap{
+                    { QStringLiteral("kind"), QStringLiteral("property") },
+                    { QStringLiteral("name"),
+                      r.attributes().value(QStringLiteral("name")).toString() },
+                    { QStringLiteral("type"),
+                      r.attributes().value(QStringLiteral("type")).toString() },
+                    { QStringLiteral("access"),
+                      r.attributes().value(QStringLiteral("access")).toString() },
+                });
+            }
+        } else if (depth == 3 && n == QLatin1String("arg")) {
             curArgs.append(QVariantMap{
-                { QStringLiteral("name"), r.attributes().value(QStringLiteral("name")).toString() },
-                { QStringLiteral("type"), r.attributes().value(QStringLiteral("type")).toString() },
+                { QStringLiteral("name"),
+                  r.attributes().value(QStringLiteral("name")).toString() },
+                { QStringLiteral("type"),
+                  r.attributes().value(QStringLiteral("type")).toString() },
                 { QStringLiteral("direction"),
                   r.attributes().value(QStringLiteral("direction")).toString() },
-            });
-        } else if (n == QLatin1String("property")) {
-            props.append(QVariantMap{
-                { QStringLiteral("kind"), QStringLiteral("property") },
-                { QStringLiteral("name"), r.attributes().value(QStringLiteral("name")).toString() },
-                { QStringLiteral("type"), r.attributes().value(QStringLiteral("type")).toString() },
-                { QStringLiteral("access"),
-                  r.attributes().value(QStringLiteral("access")).toString() },
             });
         }
     }
@@ -128,12 +159,6 @@ QVariantMap parseIntrospection(const QString &xml)
         out[QStringLiteral("error")] = r.errorString();
     return out;
 }
-
-/// 调用上下文：把「哪个 Bridge + 哪次调用」带过 FFI 边界，回调里再 free。
-struct CallCtx {
-    Bridge *bridge;
-    quint64 id;
-};
 
 /// 递归展开一个节点，产出 (depth, label, display) 三元组的扁平行。
 void flattenOne(const QVariantMap &node, int depth, const QString &label, QVariantList &out)
@@ -181,6 +206,12 @@ void flattenOne(const QVariantMap &node, int depth, const QString &label, QVaria
     }
 }
 
+/// 调用上下文：把「哪个 Bridge + 哪次调用」带过 FFI 边界，回调里再 free。
+struct CallCtx {
+    Bridge *bridge;
+    quint64 id;
+};
+
 } // namespace
 
 // --------------------------------------------------------------- Rust → GUI 投递
@@ -191,8 +222,7 @@ extern "C" void sondeMonitorTrampoline(void *ctx, const char *json, unsigned int
     auto *b = static_cast<Bridge *>(ctx);
     if (!b || !json)
         return;
-    // 这里跑在 Rust 监控线程上。绝不可直接碰 QObject，
-    // 一律排队投递到 GUI 线程。
+    // 跑在 Rust 监控线程上，绝不直接碰 QObject，一律排队投递到 GUI 线程。
     const QByteArray payload(json);
     QMetaObject::invokeMethod(b, "handleBatch", Qt::QueuedConnection, Q_ARG(QByteArray, payload));
 }
@@ -274,6 +304,7 @@ void Bridge::clear()
     m_model.clear();
     m_pending.clear();
     m_total = 0;
+    m_matched = 0;
     emit pendingChanged();
     emit totalChanged();
 }
@@ -286,6 +317,14 @@ void Bridge::setPaused(bool p)
     if (!m_paused)
         flushPending();
     emit pausedChanged();
+}
+
+void Bridge::setOnlyWatched(bool v)
+{
+    if (m_onlyWatched == v)
+        return;
+    m_onlyWatched = v;
+    emit onlyWatchedChanged();
 }
 
 void Bridge::flushPending()
@@ -315,13 +354,17 @@ void Bridge::handleBatch(const QByteArray &payload)
                         m.value(QStringLiteral("member")).toString());
             continue;
         }
+        ++m_total;
+        if (m_onlyWatched) {
+            if (!matchesWatch(m))
+                continue;
+            ++m_matched;
+        }
         msgs.append(m);
     }
+    emit totalChanged();
     if (msgs.isEmpty())
         return;
-
-    m_total += msgs.size();
-    emit totalChanged();
 
     if (m_paused) {
         m_pending += msgs;
@@ -334,21 +377,222 @@ void Bridge::handleBatch(const QByteArray &payload)
     m_model.appendBatch(msgs);
 }
 
+// ------------------------------------------------------------------- 监听列表
+
+bool Bridge::matchesWatch(const QVariantMap &m) const
+{
+    if (m_watches.isEmpty())
+        return false;
+
+    const QString path = m.value(QStringLiteral("path")).toString();
+    const QString iface = m.value(QStringLiteral("interface")).toString();
+    const QString member = m.value(QStringLiteral("member")).toString();
+    const QString sender = m.value(QStringLiteral("sender")).toString();
+    const QString dest = m.value(QStringLiteral("destination")).toString();
+
+    for (const QVariant &v : m_watches) {
+        const QVariantMap w = v.toMap();
+        const QString kind = w.value(QStringLiteral("kind")).toString();
+        const QString wDest = w.value(QStringLiteral("dest")).toString();
+
+        // 先做服务约束：消息的 sender 或 destination 命中即可
+        if (!wDest.isEmpty() && sender != wDest && dest != wDest)
+            continue;
+
+        if (kind == QLatin1String("service"))
+            return true;
+        if (kind == QLatin1String("path")) {
+            if (path == w.value(QStringLiteral("path")).toString())
+                return true;
+            continue;
+        }
+        if (kind == QLatin1String("interface")) {
+            if (path == w.value(QStringLiteral("path")).toString()
+                && iface == w.value(QStringLiteral("iface")).toString())
+                return true;
+            continue;
+        }
+        if (kind == QLatin1String("member")) {
+            if (path == w.value(QStringLiteral("path")).toString()
+                && iface == w.value(QStringLiteral("iface")).toString()
+                && member == w.value(QStringLiteral("member")).toString())
+                return true;
+            continue;
+        }
+        if (kind == QLatin1String("property")) {
+            // 属性变更以 PropertiesChanged 的形式出现，接口是 Properties 而非原接口
+            if (path == w.value(QStringLiteral("path")).toString()
+                && member == QLatin1String("PropertiesChanged"))
+                return true;
+            continue;
+        }
+    }
+    return false;
+}
+
+bool Bridge::addWatch(const QString &kind, const QString &bus, const QString &dest,
+                      const QString &path, const QString &iface, const QString &member)
+{
+    Q_UNUSED(bus);
+    if (isWatched(kind, dest, path, iface, member))
+        return false;
+
+    QString label;
+    if (kind == QLatin1String("service"))
+        label = dest;
+    else if (kind == QLatin1String("path"))
+        label = dest + QStringLiteral("  ") + path;
+    else if (kind == QLatin1String("interface"))
+        label = dest + QStringLiteral("  ") + path + QStringLiteral("  ") + iface;
+    else
+        label = dest + QStringLiteral("  ") + path + QStringLiteral("  ") + iface
+                + QStringLiteral(".") + member;
+
+    m_watches.append(QVariantMap{
+        { QStringLiteral("kind"), kind },
+        { QStringLiteral("dest"), dest },
+        { QStringLiteral("path"), path },
+        { QStringLiteral("iface"), iface },
+        { QStringLiteral("member"), member },
+        { QStringLiteral("label"), label },
+    });
+    emit watchesChanged();
+
+    // "加入监听列表"的意图就是只看它，所以顺手打开只看监听
+    if (!m_onlyWatched) {
+        m_onlyWatched = true;
+        emit onlyWatchedChanged();
+    }
+    return true;
+}
+
+void Bridge::removeWatch(int index)
+{
+    if (index < 0 || index >= m_watches.size())
+        return;
+    m_watches.removeAt(index);
+    emit watchesChanged();
+}
+
+void Bridge::clearWatches()
+{
+    if (m_watches.isEmpty())
+        return;
+    m_watches.clear();
+    emit watchesChanged();
+}
+
+bool Bridge::isWatched(const QString &kind, const QString &dest, const QString &path,
+                       const QString &iface, const QString &member) const
+{
+    for (const QVariant &v : m_watches) {
+        const QVariantMap w = v.toMap();
+        if (w.value(QStringLiteral("kind")).toString() == kind
+            && w.value(QStringLiteral("dest")).toString() == dest
+            && w.value(QStringLiteral("path")).toString() == path
+            && w.value(QStringLiteral("iface")).toString() == iface
+            && w.value(QStringLiteral("member")).toString() == member)
+            return true;
+    }
+    return false;
+}
+
+// ------------------------------------------------------------------- 调用
+
+quint64 Bridge::dispatchCall(const QString &bus, const QString &dest, const QString &path,
+                             const QString &iface, const QString &member, const QString &sig,
+                             const QVariantList &args, int kind)
+{
+    if (!m_core)
+        return 0;
+
+    const QByteArray b = utf8(bus);
+    const QByteArray d = utf8(dest);
+    const QByteArray p = utf8(path);
+    const QByteArray i = utf8(iface);
+    const QByteArray m = utf8(member);
+    const QByteArray s = utf8(sig);
+    const QByteArray a = QJsonDocument::fromVariant(args).toJson(QJsonDocument::Compact);
+
+    const quint64 id = m_nextCallId++;
+    m_callKind.insert(id, kind);
+    auto *ctx = new CallCtx{ this, id };
+    sonde_call(m_core, b.constData(), d.constData(), p.constData(), i.constData(),
+               m.constData(), s.constData(), a.constData(), &sondeReplyTrampoline, ctx);
+    return id;
+}
+
+quint64 Bridge::call(const QString &bus, const QString &dest, const QString &path,
+                     const QString &iface, const QString &member, const QString &sig,
+                     const QVariantList &args)
+{
+    return dispatchCall(bus, dest, path, iface, member, sig, args, 0);
+}
+
+quint64 Bridge::callGetProperty(const QString &bus, const QString &dest, const QString &path,
+                                const QString &iface, const QString &prop)
+{
+    const quint64 id = dispatchCall(bus, dest, path,
+                                    QStringLiteral("org.freedesktop.DBus.Properties"),
+                                    QStringLiteral("Get"), QStringLiteral("ss"),
+                                    QVariantList{ strNode(iface), strNode(prop) }, 1);
+    m_callMeta.insert(id, QStringList{ iface, prop });
+    return id;
+}
+
+quint64 Bridge::callGetAllProperties(const QString &bus, const QString &dest,
+                                     const QString &path, const QString &iface)
+{
+    return dispatchCall(bus, dest, path,
+                        QStringLiteral("org.freedesktop.DBus.Properties"),
+                        QStringLiteral("GetAll"), QStringLiteral("s"),
+                        QVariantList{ strNode(iface) }, 2);
+}
+
 void Bridge::finishCall(quint64 id, const QByteArray &payload)
 {
+    const int kind = m_callKind.take(id);
     const QJsonDocument doc = QJsonDocument::fromJson(payload);
     QVariantMap result;
     if (doc.isObject())
         result = doc.object().toVariantMap();
-    emit callFinished(id, result);
+
+    if (kind == 0) {
+        emit callFinished(id, result);
+        return;
+    }
+
+    // 属性读取：把结果里的第一个参数取出来；Get 返回变体需要剥一层
+    const QStringList meta = m_callMeta.take(id);
+    const QString err = result.value(QStringLiteral("ok")).toBool()
+                            ? QString()
+                            : result.value(QStringLiteral("error")).toString();
+    QVariantMap node;
+    if (err.isEmpty()) {
+        const QVariantList args = result.value(QStringLiteral("args")).toList();
+        if (!args.isEmpty()) {
+            QVariantMap first = args.first().toMap();
+            if (kind == 1 && first.value(QStringLiteral("kind")).toString()
+                                 == QLatin1String("variant")) {
+                const QVariantList inner = first.value(QStringLiteral("items")).toList();
+                if (!inner.isEmpty())
+                    first = inner.first().toMap().value(QStringLiteral("node")).toMap();
+            }
+            node = first;
+        }
+    }
+    emit propertyRead(id, node, meta.value(0), meta.value(1), err);
 }
+
+// ------------------------------------------------------------------- 内省/查询
 
 QStringList Bridge::listNames(const QString &bus)
 {
     if (!m_core)
         return {};
     const QByteArray b = utf8(bus);
-    const QJsonDocument doc = QJsonDocument::fromJson(takeRust(sonde_list_names(m_core, b.constData())).toUtf8());
+    const QJsonDocument doc =
+        QJsonDocument::fromJson(takeRust(sonde_list_names(m_core, b.constData())).toUtf8());
     QStringList out;
     for (const QJsonValue &v : doc.array())
         out << v.toString();
@@ -380,30 +624,9 @@ QVariantList Bridge::typeTree(const QString &sig)
     if (!m_core)
         return {};
     const QByteArray s = utf8(sig);
-    const QJsonDocument doc = QJsonDocument::fromJson(takeRust(sonde_type_tree(s.constData())).toUtf8());
+    const QJsonDocument doc =
+        QJsonDocument::fromJson(takeRust(sonde_type_tree(s.constData())).toUtf8());
     return doc.isArray() ? doc.array().toVariantList() : QVariantList{};
-}
-
-quint64 Bridge::call(const QString &bus, const QString &dest, const QString &path,
-                     const QString &iface, const QString &member, const QString &sig,
-                     const QVariantList &args)
-{
-    if (!m_core)
-        return 0;
-
-    const QByteArray b = utf8(bus);
-    const QByteArray d = utf8(dest);
-    const QByteArray p = utf8(path);
-    const QByteArray i = utf8(iface);
-    const QByteArray m = utf8(member);
-    const QByteArray s = utf8(sig);
-    const QByteArray a = QJsonDocument::fromVariant(args).toJson(QJsonDocument::Compact);
-
-    const quint64 id = m_nextCallId++;
-    auto *ctx = new CallCtx{ this, id };
-    sonde_call(m_core, b.constData(), d.constData(), p.constData(), i.constData(),
-               m.constData(), s.constData(), a.constData(), &sondeReplyTrampoline, ctx);
-    return id;
 }
 
 QVariantList Bridge::flattenNodes(const QVariantList &nodes) const
