@@ -58,6 +58,7 @@ Sonde 认出来之后给一组页签，并**自动挑一个默认页签**：
 
 | 页签 | 什么时候可用 | 内容 |
 |---|---|---|
+| **图片** | 值是图片路径或 `file://` URI | 直接预览（`PreserveAspectFit`），显示像素尺寸，`复制路径` |
 | **表格** | 数组里全是对象 / 对象里全是标量 | 真正的列，可横向滚动，`复制` 导出制表符分隔文本 |
 | **JSON** | 内容是合法 JSON | 带行号 + 语法高亮的代码视图，可选中复制 |
 | **文本** | 总是 | 原始字符串 |
@@ -316,7 +317,7 @@ D.ApplicationWindow {
 --demo-method <name>    自检时优先选中的方法或属性名
 --demo-seed <value>     自检时给第一个字符串参数填的值
 --expand-json           JSON 值默认展开（自检/截图用）
---force-tab <name>      强制输出页签 table|json|text（自检/截图用）
+--force-tab <name>      强制输出页签 image|table|json|text（自检/截图用）
 --size <WxH>            初始窗口尺寸，例如 1000x640（自检/截图用）
 --dump-tree             打印对象树的行（id/kind/name/depth）后退出，调试树结构用
 --screenshot <path>     渲染一帧保存 PNG 后退出

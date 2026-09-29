@@ -144,8 +144,43 @@ ColumnLayout {
 
     readonly property string defaultTab:
         (typeof forceTab !== "undefined" && forceTab !== "") ? forceTab
-        : (tableable ? "table" : (parsed !== null ? "json" : "text"))
-    readonly property var tabNames: ["table", "json", "text"]
+        : (root.hasImage ? "image"
+                         : (tableable ? "table" : (parsed !== null ? "json" : "text")))
+    /// 值是不是一张能显示的图片（file:// URI 或绝对路径 + 图片扩展名）。
+    /// 只处理本地文件——远程 URL 不主动去抓（慢且可能失败）。
+    readonly property string imageSource: {
+        var t = root.rawStringValue
+        if (t === "" && root.nodes.length === 1 && root.nodes[0]
+                && root.nodes[0].kind === "str")
+            t = "" + (root.nodes[0].text || "")
+        if (t === "")
+            return ""
+        var s = t.trim()
+        if (s.length >= 2 && (s.charAt(0) === '"' || s.charAt(0) === "'")
+                || s.length >= 2 && s.charAt(s.length - 1) === '"')
+            s = s.replace(/^["']|["']$/g, "")
+        if (s.indexOf("file://") !== 0 && s.charAt(0) !== "/")
+            return ""
+        var lower = s.toLowerCase()
+        var exts = [".png", ".jpg", ".jpeg", ".bmp", ".gif", ".webp", ".svg",
+                    ".ico", ".xpm", ".tif", ".tiff", ".avif"]
+        var ok = false
+        for (var i = 0; i < exts.length; ++i) {
+            if (lower.slice(-exts[i].length) === exts[i]) {
+                ok = true
+                break
+            }
+        }
+        if (!ok)
+            return ""
+        // Image 只认 URL：裸绝对路径会被当成相对路径
+        if (s.charAt(0) === "/")
+            s = "file://" + s
+        return s
+    }
+    readonly property bool hasImage: root.imageSource !== ""
+
+    readonly property var tabNames: ["image", "table", "json", "text"]
     readonly property string activeTab: root.tab !== "" ? root.tab : root.defaultTab
     readonly property int activeIndex: Math.max(0, tabNames.indexOf(activeTab))
 
@@ -186,9 +221,16 @@ ColumnLayout {
             // 不会和 activeTab 形成绑定循环。
 
             TabButton {
+                text: "图片"
+                implicitWidth: 56
+                visible: root.hasImage
+                onClicked: root.tab = "image"
+            }
+            TabButton {
                 text: "表格"
                 implicitWidth: 56
                 enabled: root.tableable
+                visible: root.tableable
                 onClicked: root.tab = "table"
             }
             TabButton {
@@ -207,6 +249,14 @@ ColumnLayout {
         Item { Layout.fillWidth: true }
 
         Label {
+            visible: root.activeTab === "image" && root.width > 380
+            text: preview.status === Image.Loading ? "加载中…"
+                  : (preview.status === Image.Error ? "读不到文件"
+                     : (preview.sourceSize.width + " × " + preview.sourceSize.height))
+            color: theme.textFaint
+            font.pixelSize: 10
+        }
+        Label {
             visible: root.activeTab === "table" && root.width > 380
             text: root.table.rows.length + " 行 × " + root.table.cols.length + " 列"
             color: theme.textFaint
@@ -223,7 +273,7 @@ ColumnLayout {
             text: "放大"
             implicitWidth: 46
             implicitHeight: 22
-            visible: root.activeTab !== "text"
+            visible: root.activeTab === "json" || root.activeTab === "table"
             onClicked: viewer.open()
         }
         D.ToolButton {
@@ -273,6 +323,52 @@ ColumnLayout {
         Layout.preferredHeight: root.maxHeight
         Layout.maximumHeight: root.maxHeight
         currentIndex: root.activeIndex
+
+        // ---- 图片 ----
+        Rectangle {
+            color: theme.bg
+            border.color: theme.border
+            radius: 3
+            clip: true
+
+            ColumnLayout {
+                anchors.fill: parent
+                anchors.margins: 8
+                spacing: 6
+
+                Image {
+                    id: preview
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    source: root.hasImage ? root.imageSource : ""
+                    fillMode: Image.PreserveAspectFit
+                    asynchronous: true
+                    cache: false
+                    smooth: true
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 8
+
+                    Label {
+                        Layout.fillWidth: true
+                        wrapMode: Text.WrapAnywhere
+                        text: preview.status === Image.Error
+                              ? ("✗  读不到 " + root.imageSource)
+                              : root.imageSource
+                        color: preview.status === Image.Error ? theme.error : theme.textFaint
+                        font.pixelSize: 10
+                    }
+                    D.ToolButton {
+                        text: "复制路径"
+                        implicitWidth: 70
+                        implicitHeight: 22
+                        onClicked: clip.put(root.imageSource)
+                    }
+                }
+            }
+        }
 
         // ---- 表格 ----
         Rectangle {
