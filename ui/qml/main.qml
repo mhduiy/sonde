@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import org.deepin.dtk 1.0 as D
 import QtQuick.Layouts
 
 ApplicationWindow {
@@ -110,7 +111,7 @@ ApplicationWindow {
             }
 
             Label { text: "总线"; color: theme.textDim; font.pixelSize: 12 }
-            ComboBox {
+            D.ComboBox {
                 id: busBox
                 model: ["session", "system"]
                 Layout.preferredWidth: 116
@@ -131,7 +132,7 @@ ApplicationWindow {
                 font.pixelSize: 11
             }
 
-            Button {
+            D.Button {
                 text: theme.dark ? "☀  浅色" : "☾  深色"
                 onClicked: theme.dark = !theme.dark
             }

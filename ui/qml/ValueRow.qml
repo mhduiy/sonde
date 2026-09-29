@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import org.deepin.dtk 1.0 as D
 import QtQuick.Layouts
 import "kinds.js" as K
 
@@ -72,14 +73,14 @@ ColumnLayout {
             }
         }
 
-        ToolButton {
+        D.ToolButton {
             visible: root.row.json === true
             text: root.expandJson ? "收起" : "格式化"
             implicitHeight: 22
             onClicked: root.expandJson = !root.expandJson
         }
 
-        ToolButton {
+        D.ToolButton {
             text: "复制"
             implicitHeight: 22
             onClicked: clip.put(root.row.json === true && root.row.jsonPretty !== ""
@@ -107,12 +108,12 @@ ColumnLayout {
                 font.pixelSize: 10
             }
             Item { Layout.fillWidth: true }
-            ToolButton {
+            D.ToolButton {
                 text: "放大查看"
                 implicitHeight: 20
                 onClicked: if (viewerLoader.item) viewerLoader.item.open()
             }
-            ToolButton {
+            D.ToolButton {
                 text: "复制全部"
                 implicitHeight: 20
                 onClicked: clip.put(root.row.jsonPretty)

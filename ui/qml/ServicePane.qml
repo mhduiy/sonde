@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import org.deepin.dtk 1.0 as D
 import QtQuick.Layouts
 
 /// 左栏：总线上的服务。搜索框就在服务列表正上方——它搜的就是服务。
@@ -83,7 +84,7 @@ Rectangle {
                         color: theme.textFaint
                         font.pixelSize: 10
                     }
-                    ToolButton {
+                    D.ToolButton {
                         text: "⟳"
                         implicitWidth: 24
                         implicitHeight: 22
@@ -93,7 +94,7 @@ Rectangle {
                     }
                 }
 
-                TextField {
+                D.TextField {
                     Layout.fillWidth: true
                     placeholderText: "搜索服务名"
                     onTextChanged: root.query = text

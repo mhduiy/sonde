@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import org.deepin.dtk 1.0 as D
 import QtQuick.Layouts
 import "kinds.js" as K
 
@@ -186,7 +187,7 @@ ColumnLayout {
             font.pixelSize: 11
         }
         Item { Layout.fillWidth: true }
-        ToolButton {
+        D.ToolButton {
             text: "复制参数"
             implicitHeight: 22
             visible: root.nodes.length > 0
@@ -241,7 +242,7 @@ ColumnLayout {
                         elide: Text.ElideRight
                     }
 
-                    TextField {
+                    D.TextField {
                         Layout.fillWidth: true
                         visible: !editRow.row.composite && editRow.row.node.kind !== "variant"
                         text: editRow.row.node.text !== undefined
@@ -256,7 +257,7 @@ ColumnLayout {
                         Layout.fillWidth: true
                         spacing: 4
                         visible: editRow.row.node.kind === "variant"
-                        TextField {
+                        D.TextField {
                             Layout.preferredWidth: 64
                             text: editRow.row.node.text || "s"
                             placeholderText: "内层签名"
@@ -264,7 +265,7 @@ ColumnLayout {
                             font.pixelSize: 12
                             onEditingFinished: editRow.row.node.text = text
                         }
-                        Button {
+                        D.Button {
                             text: "应用"
                             implicitHeight: 26
                             onClicked: {
@@ -298,7 +299,7 @@ ColumnLayout {
                         font.pixelSize: 10
                     }
 
-                    Button {
+                    D.Button {
                         visible: editRow.row.node.kind === "array"
                                  || editRow.row.node.kind === "dict"
                         text: "＋"
@@ -306,7 +307,7 @@ ColumnLayout {
                         implicitHeight: 26
                         onClicked: root.addChild(editRow.row.node)
                     }
-                    Button {
+                    D.Button {
                         visible: editRow.row.removable
                         text: "－"
                         implicitWidth: 30
@@ -323,7 +324,7 @@ ColumnLayout {
         Layout.fillWidth: true
         spacing: 8
 
-        Button {
+        D.Button {
             text: "发送调用"
             enabled: !root.busy && root.dest !== "" && root.member !== ""
             onClicked: root.invoke()
@@ -345,7 +346,7 @@ ColumnLayout {
             font.pixelSize: 11
         }
         Item { Layout.fillWidth: true }
-        ToolButton {
+        D.ToolButton {
             visible: root.result !== null && root.result.ok
             text: "复制返回"
             implicitHeight: 22
@@ -363,18 +364,12 @@ ColumnLayout {
         font.pixelSize: 11
     }
 
-    ColumnLayout {
+    // 结构化输出：表格 / JSON / 文本，自动识别挑默认页签
+    ValueOutput {
         Layout.fillWidth: true
-        spacing: 4
-        visible: root.resultRows.length > 0
-
-        Repeater {
-            model: root.resultRows
-            delegate: ValueRow {
-                required property var modelData
-                row: modelData
-            }
-        }
+        visible: root.result !== null && root.result.ok
+                 && root.result.args && root.result.args.length > 0
+        nodes: (root.result && root.result.args) ? root.result.args : []
     }
 
     Clip { id: clip }

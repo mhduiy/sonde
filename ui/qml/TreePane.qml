@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import org.deepin.dtk 1.0 as D
 import QtQuick.Layouts
 import "kinds.js" as K
 
@@ -95,7 +96,7 @@ Rectangle {
 
                 Item { Layout.fillWidth: true }
 
-                TextField {
+                D.TextField {
                     Layout.preferredWidth: 150
                     implicitHeight: 24
                     placeholderText: "过滤本树"
@@ -103,7 +104,7 @@ Rectangle {
                     onTextChanged: tree.filter = text
                 }
 
-                ToolButton {
+                D.ToolButton {
                     text: "定位"
                     implicitHeight: 24
                     enabled: tree.service !== ""
@@ -111,7 +112,7 @@ Rectangle {
                     ToolTip.visible: hovered
                     ToolTip.text: "跳到与服务名对应的对象路径（例如 org.deepin.dde.Timedate1 → /org/deepin/dde/Timedate1）"
                 }
-                CheckBox {
+                D.CheckBox {
                     text: "精简"
                     checked: tree.hideStandard
                     onToggled: tree.hideStandard = checked
@@ -119,19 +120,19 @@ Rectangle {
                     ToolTip.visible: hovered
                     ToolTip.text: "隐藏 org.freedesktop.DBus.* 标准接口，只留下服务自己的接口"
                 }
-                ToolButton {
+                D.ToolButton {
                     text: "展开"
                     implicitHeight: 24
                     enabled: tree.service !== ""
                     onClicked: tree.expandAll()
                 }
-                ToolButton {
+                D.ToolButton {
                     text: "折叠"
                     implicitHeight: 24
                     enabled: tree.service !== ""
                     onClicked: tree.collapseAll()
                 }
-                ToolButton {
+                D.ToolButton {
                     text: "⟳"
                     implicitWidth: 26
                     implicitHeight: 24
@@ -214,13 +215,15 @@ Rectangle {
                     root.activate(row.modelData)
                 }
 
-                // 双击：有子节点就展开/收起；属性没有子节点，就直接读值
+                // 双击：属性直接读值；其余节点（路径/接口/方法/信号）都是展开/收起。
+                // 注意不能用 hasChildren 判断——未加载的节点 children 为空，
+                // 那样双击就毫无反应（用户会以为"点不开"）。
                 onDoubleClicked: {
                     root.menuTarget = row.modelData
                     root.activate(row.modelData)
                     if (row.modelData.kind === "property")
                         root.readPropertyRequested(row.modelData)
-                    else if (row.modelData.hasChildren)
+                    else if (row.modelData.kind !== "arg")
                         tree.toggle(row.modelData.id)
                 }
 
@@ -248,7 +251,7 @@ Rectangle {
                         }
                         MouseArea {
                             anchors.fill: parent
-                            enabled: row.modelData.hasChildren
+                            enabled: row.modelData.kind !== "arg"
                             onClicked: tree.toggle(row.modelData.id)
                         }
                     }

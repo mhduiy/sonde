@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import org.deepin.dtk 1.0 as D
 
 /// 代码查看器：行号 + 语法高亮 + 可选中复制 + 双向滚动。
 ///

@@ -17,31 +17,22 @@
 #include "objecttree.h"
 #include "theme.h"
 
+#ifdef SONDE_WITH_DTK
+#include <dguiapplicationhelper.h>
+#endif
+
 namespace {
 
-/// 把主题映射到 Qt 控件的调色板，这样 TextField/Button/ComboBox 等
-/// 原生控件会自动跟着浅色/深色切换，不用逐个手写样式。
-void applyPalette(const Theme &t)
+/// DTK 自己负责控件主题。用 DTK 之后**不要**再调 QGuiApplication::setPalette，
+/// 否则 DTK 会警告 "Don't use it on DTK application"。
+void applyDtkTheme(const Theme &t)
 {
-    QPalette p;
-    p.setColor(QPalette::Window, t.bg());
-    p.setColor(QPalette::WindowText, t.text());
-    p.setColor(QPalette::Base, t.surface());
-    p.setColor(QPalette::AlternateBase, t.surfaceAlt());
-    p.setColor(QPalette::Text, t.text());
-    p.setColor(QPalette::Button, t.surfaceAlt());
-    p.setColor(QPalette::ButtonText, t.text());
-    p.setColor(QPalette::Highlight, t.accent());
-    p.setColor(QPalette::HighlightedText, t.accentText());
-    p.setColor(QPalette::PlaceholderText, t.textFaint());
-    p.setColor(QPalette::ToolTipBase, t.surface());
-    p.setColor(QPalette::ToolTipText, t.text());
-    p.setColor(QPalette::Mid, t.border());
-    p.setColor(QPalette::Dark, t.borderStrong());
-    p.setColor(QPalette::Disabled, QPalette::Text, t.textFaint());
-    p.setColor(QPalette::Disabled, QPalette::ButtonText, t.textFaint());
-    p.setColor(QPalette::Disabled, QPalette::WindowText, t.textFaint());
-    QGuiApplication::setPalette(p);
+#ifdef SONDE_WITH_DTK
+    using Helper = Dtk::Gui::DGuiApplicationHelper;
+    Helper::instance()->setPaletteType(t.dark() ? Helper::DarkType : Helper::LightType);
+#else
+    Q_UNUSED(t)
+#endif
 }
 
 } // namespace
@@ -121,8 +112,9 @@ int main(int argc, char *argv[])
     Theme theme;
     if (parser.isSet(darkOpt))
         theme.setDark(true);
-    applyPalette(theme);
-    QObject::connect(&theme, &Theme::changed, &app, [&theme] { applyPalette(theme); });
+    // 应用启动时先让 DTK 的控件主题和 Sonde 自己的主题一致
+    applyDtkTheme(theme);
+    QObject::connect(&theme, &Theme::changed, &app, [&theme] { applyDtkTheme(theme); });
 
     // 故意不 delete：监控线程把 Bridge 当作回调上下文，
     // 让它活到进程结束，避免退出瞬间出现悬垂指针。

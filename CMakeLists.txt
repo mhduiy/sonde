@@ -39,6 +39,20 @@ target_compile_definitions(sonde PRIVATE
 
 add_dependencies(sonde sonde_rust)
 
+# DTK6（Deepin Tool Kit）：让 QML 控件用系统原生样式，并接管深浅色
+find_package(PkgConfig QUIET)
+if(PkgConfig_FOUND)
+    pkg_check_modules(DTK6GUI QUIET dtk6gui)
+endif()
+if(DTK6GUI_FOUND)
+    target_include_directories(sonde PRIVATE ${DTK6GUI_INCLUDE_DIRS})
+    target_link_libraries(sonde PRIVATE ${DTK6GUI_LINK_LIBRARIES})
+    target_compile_definitions(sonde PRIVATE SONDE_WITH_DTK=1)
+    message(STATUS "找到 DTK6 Gui：控件使用 DTK 原生样式")
+else()
+    message(STATUS "未找到 DTK6 Gui：控件回退到 Qt 默认样式")
+endif()
+
 target_link_libraries(sonde PRIVATE
     Qt6::Quick
     Qt6::Qml

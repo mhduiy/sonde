@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import org.deepin.dtk 1.0 as D
 import QtQuick.Layouts
 import "kinds.js" as K
 
@@ -13,6 +14,7 @@ Rectangle {
 
     // 属性读取
     property var propRows: []
+    property var propNode: null
     property string propError: ""
     property double propLastId: 0
     property string propName: ""
@@ -93,6 +95,7 @@ Rectangle {
             root.propError = error
             root.propRows = (error === "" && node && Object.keys(node).length > 0)
                             ? bridge.flattenNodes([node]) : []
+            root.propNode = (error === "" && node && Object.keys(node).length > 0) ? node : null
             root.propReadAt = K.clockOf(Date.now() * 1000)
         }
         function onPropertyWritten(id, ok, error) {
@@ -163,7 +166,7 @@ Rectangle {
                         elide: Text.ElideMiddle
                     }
 
-                    ToolButton {
+                    D.ToolButton {
                         visible: root.node !== null && root.node.kind !== "arg"
                         text: "＋ 监听"
                         implicitHeight: 24
@@ -269,13 +272,13 @@ Rectangle {
                         Layout.fillWidth: true
                         spacing: 8
 
-                        Button {
+                        D.Button {
                             text: "读取当前值"
                             enabled: root.readable
                             onClicked: root.readProperty(root.node)
                         }
                         Label { text: "定时读取"; color: theme.textDim; font.pixelSize: 11 }
-                        ComboBox {
+                        D.ComboBox {
                             id: pollBox
                             Layout.preferredWidth: 104
                             model: ["关闭", "1 秒", "2 秒", "5 秒"]
@@ -287,7 +290,7 @@ Rectangle {
                                     root.readProperty(root.node)
                             }
                         }
-                        ToolButton {
+                        D.ToolButton {
                             visible: root.propRows.length > 0
                             text: "复制值"
                             implicitHeight: 22
@@ -318,14 +321,12 @@ Rectangle {
                     ColumnLayout {
                         Layout.fillWidth: true
                         spacing: 4
-                        visible: root.propRows.length > 0
+                        visible: root.propNode !== null
 
-                        Repeater {
-                            model: root.propRows
-                            delegate: ValueRow {
-                                required property var modelData
-                                row: modelData
-                            }
+                        ValueOutput {
+                            Layout.fillWidth: true
+                            nodes: root.propNode ? [root.propNode] : []
+                            maxHeight: 300
                         }
                     }
 
@@ -356,14 +357,14 @@ Rectangle {
                                 Layout.fillWidth: true
                                 spacing: 6
 
-                                TextField {
+                                D.TextField {
                                     id: writeField
                                     Layout.fillWidth: true
                                     placeholderText: "新值"
                                     font.family: "monospace"
                                     font.pixelSize: 12
                                 }
-                                Button {
+                                D.Button {
                                     text: "写入"
                                     enabled: writeField.text !== ""
                                     onClicked: root.writeProperty(root.node, writeField.text)

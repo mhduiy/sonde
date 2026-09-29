@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import org.deepin.dtk 1.0 as D
 import QtQuick.Layouts
 
 /// 全屏查看 JSON：行号 + 高亮 + 双向滚动 + 一键复制全部。
@@ -48,18 +49,18 @@ Popup {
                 }
                 Item { Layout.fillWidth: true }
 
-                CheckBox {
+                D.CheckBox {
                     text: "自动换行"
                     checked: codeView.wrap
                     onToggled: codeView.wrap = checked
                     font.pixelSize: 11
                 }
-                Button {
+                D.Button {
                     text: "复制全部"
                     implicitHeight: 24
                     onClicked: clip.put(root.text)
                 }
-                ToolButton {
+                D.ToolButton {
                     text: "✕"
                     implicitWidth: 26
                     implicitHeight: 24

@@ -109,6 +109,9 @@ public:
     Q_INVOKABLE QString nodeToText(const QVariantMap &node, int indent = 0) const;
     /// JSON 语法高亮：返回按行切好的 HTML，供 CodeView 渲染（带行号、可选中）
     Q_INVOKABLE QStringList jsonLines(const QString &json, const QVariantMap &colors) const;
+    /// 把值节点转成**真正的 JSON 文本**（结构体→数组、字典→对象、变体→内层值）
+    Q_INVOKABLE QString nodeToJson(const QVariantMap &node) const;
+    Q_INVOKABLE QString nodesToJson(const QVariantList &nodes) const;
 
 public slots:
     void handleBatch(const QByteArray &payload);

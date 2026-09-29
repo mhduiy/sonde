@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import org.deepin.dtk 1.0 as D
 import QtQuick.Layouts
 import "kinds.js" as K
 
@@ -85,12 +86,12 @@ Popup {
                     elide: Text.ElideRight
                 }
 
-                ToolButton {
+                D.ToolButton {
                     text: "复制为文本"
                     implicitHeight: 24
                     onClicked: clip.put(bridge.messageToText(root.msg))
                 }
-                ToolButton {
+                D.ToolButton {
                     text: "✕"
                     implicitWidth: 26
                     implicitHeight: 24
@@ -192,7 +193,7 @@ Popup {
                     font.pixelSize: 11
                     elide: Text.ElideMiddle
                 }
-                Button {
+                D.Button {
                     text: "监听这条消息的来源"
                     enabled: root.msg !== null && (root.msg.member || "") !== ""
                     onClicked: {

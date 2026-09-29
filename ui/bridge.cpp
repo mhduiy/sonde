@@ -233,6 +233,107 @@ struct CallCtx {
     quint64 id;
 };
 
+// ---- 值节点 → 真正的 JSON ----
+
+bool isNumericKind(const QString &k)
+{
+    return k == QLatin1String("u8") || k == QLatin1String("i16") || k == QLatin1String("u16")
+           || k == QLatin1String("i32") || k == QLatin1String("u32") || k == QLatin1String("i64")
+           || k == QLatin1String("u64") || k == QLatin1String("f64");
+}
+
+void escapeJson(const QString &s, QString &out)
+{
+    out += QLatin1Char('"');
+    for (const QChar c : s) {
+        switch (c.unicode()) {
+        case u'"': out += QLatin1String("\\\""); break;
+        case u'\\': out += QLatin1String("\\\\"); break;
+        case u'\n': out += QLatin1String("\\n"); break;
+        case u'\r': out += QLatin1String("\\r"); break;
+        case u'\t': out += QLatin1String("\\t"); break;
+        default:
+            if (c.unicode() < 0x20)
+                out += QStringLiteral("\\u%1").arg(c.unicode(), 4, 16, QLatin1Char('0'));
+            else
+                out += c;
+        }
+    }
+    out += QLatin1Char('"');
+}
+
+void jsonInto(const QVariantMap &node, int indent, QString &out);
+
+void jsonPad(int indent, QString &out)
+{
+    out += QString(indent * 2, QLatin1Char(' '));
+}
+
+void jsonInto(const QVariantMap &node, int indent, QString &out)
+{
+    const QString kind = node.value(QStringLiteral("kind")).toString();
+    const QString text = node.value(QStringLiteral("text")).toString();
+    const QVariantList items = node.value(QStringLiteral("items")).toList();
+
+    if (kind == QLatin1String("bool")) {
+        out += (text == QLatin1String("true") || text == QLatin1String("1"))
+                   ? QLatin1String("true") : QLatin1String("false");
+        return;
+    }
+    if (kind == QLatin1String("str") || kind == QLatin1String("path")
+        || kind == QLatin1String("sig")) {
+        escapeJson(text, out);
+        return;
+    }
+    if (kind == QLatin1String("fd") || isNumericKind(kind)) {
+        out += text.trimmed().isEmpty() ? QStringLiteral("0") : text.trimmed();
+        return;
+    }
+    if (kind == QLatin1String("array") || kind == QLatin1String("struct")) {
+        if (items.isEmpty()) {
+            out += QLatin1String("[]");
+            return;
+        }
+        out += QLatin1String("[\n");
+        for (int i = 0; i < items.size(); ++i) {
+            jsonPad(indent + 1, out);
+            jsonInto(items.at(i).toMap().value(QStringLiteral("node")).toMap(), indent + 1, out);
+            out += (i + 1 < items.size()) ? QLatin1String(",\n") : QLatin1String("\n");
+        }
+        jsonPad(indent, out);
+        out += QLatin1Char(']');
+        return;
+    }
+    if (kind == QLatin1String("dict")) {
+        if (items.isEmpty()) {
+            out += QLatin1String("{}");
+            return;
+        }
+        out += QLatin1String("{\n");
+        for (int i = 0; i < items.size(); ++i) {
+            const QVariantMap e = items.at(i).toMap();
+            jsonPad(indent + 1, out);
+            escapeJson(e.value(QStringLiteral("key")).toMap()
+                           .value(QStringLiteral("text")).toString(), out);
+            out += QLatin1String(": ");
+            jsonInto(e.value(QStringLiteral("val")).toMap(), indent + 1, out);
+            out += (i + 1 < items.size()) ? QLatin1String(",\n") : QLatin1String("\n");
+        }
+        jsonPad(indent, out);
+        out += QLatin1Char('}');
+        return;
+    }
+    if (kind == QLatin1String("variant")) {
+        if (items.isEmpty()) {
+            out += QLatin1String("null");
+            return;
+        }
+        jsonInto(items.first().toMap().value(QStringLiteral("node")).toMap(), indent, out);
+        return;
+    }
+    escapeJson(text, out);
+}
+
 } // namespace
 
 // --------------------------------------------------------------- Rust → GUI 投递
@@ -856,6 +957,25 @@ QStringList Bridge::jsonLines(const QString &json, const QVariantMap &colors) co
     }
 
     return out.split(QLatin1Char('\n'));
+}
+
+QString Bridge::nodeToJson(const QVariantMap &node) const
+{
+    QString out;
+    jsonInto(node, 0, out);
+    return out;
+}
+
+QString Bridge::nodesToJson(const QVariantList &nodes) const
+{
+    QString out = QStringLiteral("[\n");
+    for (int i = 0; i < nodes.size(); ++i) {
+        out += QStringLiteral("  ");
+        jsonInto(nodes.at(i).toMap(), 1, out);
+        out += (i + 1 < nodes.size()) ? QStringLiteral(",\n") : QStringLiteral("\n");
+    }
+    out += QLatin1Char(']');
+    return out;
 }
 
 QString Bridge::messageToText(const QVariantMap &msg) const

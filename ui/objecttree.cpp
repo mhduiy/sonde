@@ -479,7 +479,11 @@ QVariantMap ObjectTree::rowOf(const Node *n, int depth) const
         { QStringLiteral("inSig"), n->inSig },
         { QStringLiteral("outSig"), n->outSig },
         { QStringLiteral("depth"), depth },
-        { QStringLiteral("hasChildren"), !n->children.isEmpty() },
+        // 未加载的路径节点乐观地认为"可以展开"，否则行上没有箭头，
+        // 用户根本不知道它点得开——accountsservice 的 User* 就是栽在这里。
+        { QStringLiteral("hasChildren"),
+          !n->children.isEmpty()
+              || (n->kind == QLatin1String("path") && !n->loaded) },
         { QStringLiteral("expanded"), n->expanded },
         { QStringLiteral("bus"), m_bus },
         { QStringLiteral("dest"), m_dest },

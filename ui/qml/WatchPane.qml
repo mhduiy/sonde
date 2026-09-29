@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import org.deepin.dtk 1.0 as D
 import QtQuick.Layouts
 import "kinds.js" as K
 
@@ -34,7 +35,7 @@ Rectangle {
                 anchors.rightMargin: 12
                 spacing: 8
 
-                ToolButton {
+                D.ToolButton {
                     text: root.expanded ? "▾" : "▸"
                     implicitWidth: 24
                     implicitHeight: 24
@@ -56,7 +57,7 @@ Rectangle {
                     font.pixelSize: 11
                 }
 
-                Button {
+                D.Button {
                     text: bridge.monitoring ? "停止监听" : "开始监听"
                     implicitHeight: 24
                     onClicked: bridge.monitoring
@@ -72,14 +73,14 @@ Rectangle {
                     color: theme.border
                 }
 
-                Switch {
+                D.Switch {
                     text: "只看监听列表"
                     checked: bridge.onlyWatched
                     onToggled: bridge.onlyWatched = checked
                     font.pixelSize: 11
                 }
 
-                Button {
+                D.Button {
                     text: bridge.paused
                           ? ("继续" + (bridge.pending > 0 ? " (+" + bridge.pending + ")" : ""))
                           : "暂停"
@@ -87,7 +88,7 @@ Rectangle {
                     implicitHeight: 24
                     onClicked: bridge.paused = !bridge.paused
                 }
-                Button {
+                D.Button {
                     text: "清空消息"
                     implicitHeight: 24
                     onClicked: bridge.clear()
@@ -151,7 +152,7 @@ Rectangle {
                                 font.bold: true
                             }
                             Item { Layout.fillWidth: true }
-                            ToolButton {
+                            D.ToolButton {
                                 text: "全部清除"
                                 implicitHeight: 20
                                 enabled: bridge.watches.length > 0
@@ -221,7 +222,7 @@ Rectangle {
                                     elide: Text.ElideRight
                                 }
 
-                                ToolButton {
+                                D.ToolButton {
                                     text: "✕"
                                     implicitWidth: 22
                                     implicitHeight: 22
