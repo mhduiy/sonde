@@ -14,13 +14,8 @@ ApplicationWindow {
     color: theme.bg
 
     // 共享状态
-    property string query: ""
     property var selectedNode: null
     property string activeBus: busBox.currentText
-
-    function selectNode(row) {
-        root.selectedNode = row
-    }
 
     Component.onCompleted: {
         if (typeof initialBus !== "undefined" && initialBus !== "")
@@ -30,37 +25,47 @@ ApplicationWindow {
         if (typeof demoMode !== "undefined" && demoMode) {
             watchPane.expanded = true
             bridge.startMonitor(root.activeBus)
-            // 自检/截图用：加一条服务级监听从流里有内容
             bridge.addWatch("service", root.activeBus, "org.freedesktop.DBus", "", "", "")
-            // 展开第一个接口，再挑一个"带一个字符串参数"的方法
-            // （GetNameOwner 这类），填个值真发一次，验证整条调用链路。
-            var rows = tree.rows
-            for (var i = 0; i < rows.length; ++i) {
-                if (rows[i].kind === "interface") {
-                    tree.toggle(rows[i].id)
-                    break
+            // 自检：找到一个"带一个字符串参数"的方法，填值真发一次
+            function pickNode() {
+                var rows = tree.rows
+                var want = (typeof demoMethod !== "undefined") ? demoMethod : ""
+                var firstMethod = null
+                for (var j = 0; j < rows.length; ++j) {
+                    if (want !== "" && rows[j].name === want)
+                        return rows[j]
+                    if (rows[j].kind !== "method")
+                        continue
+                    if (firstMethod === null)
+                        firstMethod = rows[j]
+                    if (want === "" && rows[j].inSig === "s")
+                        return rows[j]
                 }
+                return firstMethod
             }
-            rows = tree.rows
-            var picked = null
-            for (var j = 0; j < rows.length; ++j) {
-                if (rows[j].kind === "method" && rows[j].inSig === "s") {
-                    picked = rows[j]
-                    break
-                }
-            }
+
+            var picked = pickNode()
             if (picked === null) {
-                for (var k = 0; k < rows.length; ++k) {
-                    if (rows[k].kind === "method") {
-                        picked = rows[k]
+                // 接口还没展开：展开第一个（注意别 toggle 已经展开的，否则就收起来了）
+                var rows0 = tree.rows
+                for (var i = 0; i < rows0.length; ++i) {
+                    if (rows0[i].kind === "interface" && !rows0[i].expanded) {
+                        tree.toggle(rows0[i].id)
                         break
                     }
                 }
+                picked = pickNode()
             }
             if (picked !== null) {
                 root.selectedNode = picked
                 treePane.selectedId = picked.id
-                Qt.callLater(function () { detailPane.demoRun("org.freedesktop.DBus") })
+                var seed = (typeof demoSeed !== "undefined" && demoSeed !== "")
+                           ? demoSeed : "org.freedesktop.DBus"
+                if (picked.kind === "property") {
+                    Qt.callLater(function () { detailPane.readProperty(picked) })
+                } else if (picked.kind === "method") {
+                    Qt.callLater(function () { detailPane.demoRun(seed) })
+                }
             }
         }
     }
@@ -96,7 +101,13 @@ ApplicationWindow {
                 Layout.rightMargin: 6
             }
 
-            Rectangle { Layout.preferredWidth: 1; Layout.fillHeight: true; Layout.topMargin: 8; Layout.bottomMargin: 8; color: theme.border }
+            Rectangle {
+                Layout.preferredWidth: 1
+                Layout.fillHeight: true
+                Layout.topMargin: 8
+                Layout.bottomMargin: 8
+                color: theme.border
+            }
 
             Label { text: "总线"; color: theme.textDim; font.pixelSize: 12 }
             ComboBox {
@@ -109,21 +120,15 @@ ApplicationWindow {
                 }
             }
 
-            Button {
-                text: bridge.monitoring ? "停止监听" : "开始监听"
-                onClicked: bridge.monitoring
-                           ? bridge.stopMonitor()
-                           : bridge.startMonitor(root.activeBus)
-            }
+            Item { Layout.fillWidth: true }
 
-            Rectangle { Layout.preferredWidth: 1; Layout.fillHeight: true; Layout.topMargin: 8; Layout.bottomMargin: 8; color: theme.border }
-
-            TextField {
-                Layout.fillWidth: true
-                placeholderText: "搜索服务名 / 接口 / 方法 / 信号（同时过滤左侧服务列表和对象树）"
-                onTextChanged: {
-                    root.query = text
-                }
+            Label {
+                visible: bridge.monitoring
+                text: bridge.monitoring
+                      ? ("监听中 · 收到 " + bridge.total + " 条" + (bridge.paused ? "（已暂停）" : ""))
+                      : ""
+                color: bridge.monitoring ? theme.ok : theme.textFaint
+                font.pixelSize: 11
             }
 
             Button {
@@ -199,9 +204,8 @@ ApplicationWindow {
             }
 
             ServicePane {
-                SplitView.preferredWidth: 268
-                SplitView.minimumWidth: 190
-                query: root.query
+                SplitView.preferredWidth: 288
+                SplitView.minimumWidth: 200
                 bus: root.activeBus
                 onServiceActivated: (dest) => {
                     tree.setService(root.activeBus, dest)
@@ -219,8 +223,8 @@ ApplicationWindow {
 
             DetailPane {
                 id: detailPane
-                SplitView.preferredWidth: 440
-                SplitView.minimumWidth: 320
+                SplitView.preferredWidth: 460
+                SplitView.minimumWidth: 340
                 node: root.selectedNode
                 bus: root.activeBus
             }

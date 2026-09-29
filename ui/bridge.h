@@ -90,6 +90,12 @@ public:
     Q_INVOKABLE quint64 callGetAllProperties(const QString &bus, const QString &dest,
                                              const QString &path, const QString &iface);
 
+    /// 写入属性（内部走 org.freedesktop.DBus.Properties.Set，参数按 typeSig 构造变体）
+    Q_INVOKABLE quint64 callSetProperty(const QString &bus, const QString &dest,
+                                        const QString &path, const QString &iface,
+                                        const QString &prop, const QString &typeSig,
+                                        const QString &valueText);
+
     // ---- 监听列表 ----
     Q_INVOKABLE bool addWatch(const QString &kind, const QString &bus, const QString &dest,
                               const QString &path, const QString &iface,
@@ -116,12 +122,15 @@ signals:
     void callFinished(quint64 id, const QVariantMap &result);
     void propertyRead(quint64 id, const QVariantMap &node, const QString &iface,
                       const QString &name, const QString &error);
+    void propertyWritten(quint64 id, bool ok, const QString &error);
     void notice(const QString &level, const QString &text);
 
 private:
     quint64 dispatchCall(const QString &bus, const QString &dest, const QString &path,
                          const QString &iface, const QString &member, const QString &sig,
                          const QVariantList &args, int kind);
+    /// 由签名生成一个变体参数节点，供 Properties.Set 使用
+    QVariantMap makeVariantArg(const QString &typeSig, const QString &valueText) const;
     void flushPending();
     bool matchesWatch(const QVariantMap &msg) const;
 

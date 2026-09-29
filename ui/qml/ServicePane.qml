@@ -2,27 +2,43 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 
-/// 左栏：总线上的服务（名字）
+/// 左栏：总线上的服务。搜索框就在服务列表正上方——它搜的就是服务。
 Rectangle {
     id: root
 
-    property string query: ""
     property string bus: "session"
     signal serviceActivated(string dest)
 
     color: theme.surface
 
     property var names: []
+    property string query: ""
+
+    /// 唯一名（:1.x）排到已知服务后面，再按名字排序
     property var filtered: {
         var q = root.query.toLowerCase()
-        if (q === "")
-            return root.names
-        var out = []
+        var wellKnown = []
+        var unique = []
         for (var i = 0; i < root.names.length; ++i) {
-            if (root.names[i].toLowerCase().indexOf(q) >= 0)
-                out.push(root.names[i])
+            var n = root.names[i]
+            if (q !== "" && n.toLowerCase().indexOf(q) < 0)
+                continue
+            if (n.charAt(0) === ":")
+                unique.push(n)
+            else
+                wellKnown.push(n)
         }
-        return out
+        wellKnown.sort()
+        unique.sort()
+        return wellKnown.concat(unique)
+    }
+
+    property int wellKnownCount: {
+        var c = 0
+        for (var i = 0; i < root.names.length; ++i)
+            if (root.names[i].charAt(0) !== ":")
+                ++c
+        return c
     }
 
     function refresh() {
@@ -36,38 +52,55 @@ Rectangle {
         anchors.fill: parent
         spacing: 0
 
+        // ---------------------------------------------------------- 标题 + 搜索
         Rectangle {
             Layout.fillWidth: true
-            implicitHeight: 34
+            implicitHeight: 66
             color: theme.surfaceAlt
 
-            RowLayout {
+            ColumnLayout {
                 anchors.fill: parent
-                anchors.leftMargin: 10
-                anchors.rightMargin: 6
-                spacing: 6
+                anchors.leftMargin: 8
+                anchors.rightMargin: 8
+                anchors.topMargin: 6
+                anchors.bottomMargin: 6
+                spacing: 4
 
-                Label {
-                    text: "服务"
-                    color: theme.text
-                    font.bold: true
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 6
+
+                    Label {
+                        text: "服务"
+                        color: theme.text
+                        font.bold: true
+                        font.pixelSize: 12
+                    }
+                    Item { Layout.fillWidth: true }
+                    Label {
+                        text: root.filtered.length + " / " + root.names.length
+                          + "（已知 " + root.wellKnownCount + "）"
+                        color: theme.textFaint
+                        font.pixelSize: 10
+                    }
+                    ToolButton {
+                        text: "⟳"
+                        implicitWidth: 24
+                        implicitHeight: 22
+                        onClicked: root.refresh()
+                        ToolTip.visible: hovered
+                        ToolTip.text: "重新列出总线上的服务"
+                    }
+                }
+
+                TextField {
+                    Layout.fillWidth: true
+                    placeholderText: "搜索服务名"
+                    onTextChanged: root.query = text
                     font.pixelSize: 12
                 }
-                Item { Layout.fillWidth: true }
-                Label {
-                    text: root.filtered.length + " / " + root.names.length
-                    color: theme.textFaint
-                    font.pixelSize: 11
-                }
-                ToolButton {
-                    text: "⟳"
-                    implicitWidth: 26
-                    implicitHeight: 24
-                    onClicked: root.refresh()
-                    ToolTip.visible: hovered
-                    ToolTip.text: "重新列出总线上的服务"
-                }
             }
+
             Rectangle {
                 anchors.bottom: parent.bottom
                 width: parent.width
@@ -116,7 +149,7 @@ Rectangle {
                     Label {
                         Layout.fillWidth: true
                         text: row.modelData
-                        color: theme.text
+                        color: row.isUnique ? theme.textDim : theme.text
                         font.family: "monospace"
                         font.pixelSize: 12
                         elide: Text.ElideMiddle
@@ -125,8 +158,7 @@ Rectangle {
                         implicitWidth: badge.implicitWidth + 8
                         implicitHeight: 15
                         radius: 2
-                        color: row.isBus ? theme.accentSoft
-                                         : (row.isUnique ? theme.surfaceAlt : theme.surfaceAlt)
+                        color: row.isBus ? theme.accentSoft : theme.surfaceAlt
                         Label {
                             id: badge
                             anchors.centerIn: parent

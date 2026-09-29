@@ -2,11 +2,15 @@
 #include <QDebug>
 #include <QGuiApplication>
 #include <QImage>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QPalette>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QQuickStyle>
 #include <QQuickWindow>
+#include <QTextStream>
 #include <QTimer>
 
 #include "bridge.h"
@@ -66,6 +70,12 @@ int main(int argc, char *argv[])
     QCommandLineOption darkOpt(QStringLiteral("dark"), QStringLiteral("以深色主题启动"));
     QCommandLineOption demoOpt(QStringLiteral("demo"),
                                QStringLiteral("自检：自动监听 + 打开服务 + 加一条监听"));
+    QCommandLineOption demoSeedOpt(QStringLiteral("demo-seed"),
+                                   QStringLiteral("自检时给第一个字符串参数填的值"),
+                                   QStringLiteral("value"), QStringLiteral("org.freedesktop.DBus"));
+    QCommandLineOption demoMethodOpt(QStringLiteral("demo-method"),
+                                     QStringLiteral("自检时优先选中的方法名"),
+                                     QStringLiteral("name"), QString());
     QCommandLineOption shotOpt(QStringLiteral("screenshot"),
                                QStringLiteral("渲染一帧后保存为 PNG 并退出"),
                                QStringLiteral("path"));
@@ -74,13 +84,35 @@ int main(int argc, char *argv[])
                                 QStringLiteral("ms"), QStringLiteral("1800"));
     QCommandLineOption dumpOpt(QStringLiteral("dump-tree"),
                                QStringLiteral("打印对象树的行（id/kind/name/depth）后退出，调试用"));
+    QCommandLineOption callOpt(QStringLiteral("call"),
+                               QStringLiteral("无界面调用一次方法，格式 接口.成员"),
+                               QStringLiteral("iface.member"));
+    QCommandLineOption callDestOpt(QStringLiteral("call-dest"),
+                                   QStringLiteral("调用的目标服务（必填）"),
+                                   QStringLiteral("dest"), QString());
+    QCommandLineOption callPathOpt(QStringLiteral("call-path"),
+                                   QStringLiteral("调用的对象路径"),
+                                   QStringLiteral("path"), QString());
+    QCommandLineOption callSigOpt(QStringLiteral("call-sig"),
+                                  QStringLiteral("调用的参数签名"),
+                                  QStringLiteral("sig"), QString());
+    QCommandLineOption callArgsOpt(QStringLiteral("call-args"),
+                                   QStringLiteral("调用的参数（JSON 数组，每项为字符串）"),
+                                   QStringLiteral("json"), QStringLiteral("[]"));
     parser.addOption(busOpt);
     parser.addOption(serviceOpt);
     parser.addOption(darkOpt);
     parser.addOption(demoOpt);
+    parser.addOption(demoSeedOpt);
+    parser.addOption(demoMethodOpt);
     parser.addOption(shotOpt);
     parser.addOption(delayOpt);
     parser.addOption(dumpOpt);
+    parser.addOption(callOpt);
+    parser.addOption(callDestOpt);
+    parser.addOption(callPathOpt);
+    parser.addOption(callSigOpt);
+    parser.addOption(callArgsOpt);
     parser.process(app);
 
     Theme theme;
@@ -103,11 +135,54 @@ int main(int argc, char *argv[])
     engine.rootContext()->setContextProperty(QStringLiteral("initialService"),
                                             parser.value(serviceOpt));
     engine.rootContext()->setContextProperty(QStringLiteral("demoMode"), parser.isSet(demoOpt));
+    engine.rootContext()->setContextProperty(QStringLiteral("demoSeed"),
+                                            parser.value(demoSeedOpt));
+    engine.rootContext()->setContextProperty(QStringLiteral("demoMethod"),
+                                            parser.value(demoMethodOpt));
 
     engine.load(QUrl::fromLocalFile(QStringLiteral(SONDE_QML_DIR) + QStringLiteral("/main.qml")));
     if (engine.rootObjects().isEmpty()) {
         qCritical() << "QML 加载失败，检查目录:" << QStringLiteral(SONDE_QML_DIR);
         return 2;
+    }
+
+    if (parser.isSet(callOpt)) {
+        // 无界面调用：走和界面表单完全相同的路径（typeTree 建节点树 → 填值 → call）
+        const QString dotted = parser.value(callOpt);
+        const int dot = dotted.lastIndexOf(QLatin1Char('.'));
+        const QString iface = dot > 0 ? dotted.left(dot) : QString();
+        const QString member = dot > 0 ? dotted.mid(dot + 1) : dotted;
+        const QString sigStr = parser.value(callSigOpt);
+        const QJsonArray plain =
+            QJsonDocument::fromJson(parser.value(callArgsOpt).toUtf8()).array();
+
+        QVariantList nodes = bridge->typeTree(sigStr);
+        for (int i = 0; i < nodes.size() && i < plain.size(); ++i) {
+            // 高级用法：如果传的就是节点对象（带 kind），直接用，方便测试复杂类型
+            if (plain.at(i).isObject()
+                && plain.at(i).toObject().contains(QStringLiteral("kind"))) {
+                nodes[i] = plain.at(i).toObject().toVariantMap();
+                continue;
+            }
+            QVariantMap n = nodes.at(i).toMap();
+            n[QStringLiteral("text")] = plain.at(i).toVariant().toString();
+            nodes[i] = n;
+        }
+
+        QObject::connect(bridge, &Bridge::callFinished, &app,
+                         [](quint64, const QVariantMap &res) {
+                             QTextStream out(stdout);
+                             out << QJsonDocument::fromVariant(res)
+                                        .toJson(QJsonDocument::Indented)
+                                 << Qt::flush;
+                             QGuiApplication::quit();
+                         });
+        const QString dest = parser.value(callDestOpt);
+        const QString path = parser.value(callPathOpt);
+        const QString busName = parser.value(busOpt);
+        QTimer::singleShot(300, &app, [bridge, busName, dest, path, iface, member, sigStr, nodes] {
+            bridge->call(busName, dest, path, iface, member, sigStr, nodes);
+        });
     }
 
     if (parser.isSet(dumpOpt)) {

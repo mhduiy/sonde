@@ -95,6 +95,14 @@ Rectangle {
 
                 Item { Layout.fillWidth: true }
 
+                TextField {
+                    Layout.preferredWidth: 150
+                    implicitHeight: 24
+                    placeholderText: "过滤本树"
+                    font.pixelSize: 11
+                    onTextChanged: tree.filter = text
+                }
+
                 ToolButton {
                     text: "定位"
                     implicitHeight: 24
@@ -204,6 +212,16 @@ Rectangle {
                 onClicked: {
                     root.menuTarget = row.modelData
                     root.activate(row.modelData)
+                }
+
+                // 双击：有子节点就展开/收起；属性没有子节点，就直接读值
+                onDoubleClicked: {
+                    root.menuTarget = row.modelData
+                    root.activate(row.modelData)
+                    if (row.modelData.kind === "property")
+                        root.readPropertyRequested(row.modelData)
+                    else if (row.modelData.hasChildren)
+                        tree.toggle(row.modelData.id)
                 }
 
                 TapHandler {

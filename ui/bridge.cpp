@@ -185,6 +185,25 @@ void flattenOne(const QVariantMap &node, int depth, const QString &label, QVaria
         display = node.value(QStringLiteral("text")).toString();
     }
 
+    // 字符串里如果装了 JSON（deepin 的很多接口就爱这么干，例如
+    // Appearance1.List("icon") 返回一串图标主题 JSON），就认出来并预生成缩进版本，
+    // 界面可以一键格式化查看 / 复制。
+    bool isJson = false;
+    QString jsonPretty;
+    if (kind == QLatin1String("str")) {
+        const QString t = display.trimmed();
+        if (t.size() > 1
+            && ((t.startsWith(QLatin1Char('{')) && t.endsWith(QLatin1Char('}')))
+                || (t.startsWith(QLatin1Char('[')) && t.endsWith(QLatin1Char(']'))))) {
+            QJsonParseError perr;
+            const QJsonDocument doc = QJsonDocument::fromJson(t.toUtf8(), &perr);
+            if (perr.error == QJsonParseError::NoError) {
+                isJson = true;
+                jsonPretty = QString::fromUtf8(doc.toJson(QJsonDocument::Indented)).trimmed();
+            }
+        }
+    }
+
     out.append(QVariantMap{
         { QStringLiteral("depth"), depth },
         { QStringLiteral("label"), label },
@@ -192,6 +211,8 @@ void flattenOne(const QVariantMap &node, int depth, const QString &label, QVaria
         { QStringLiteral("sig"), node.value(QStringLiteral("sig")).toString() },
         { QStringLiteral("display"), display },
         { QStringLiteral("composite"), composite },
+        { QStringLiteral("json"), isJson },
+        { QStringLiteral("jsonPretty"), jsonPretty },
     });
 
     for (const QVariant &v : items) {
@@ -516,6 +537,13 @@ quint64 Bridge::dispatchCall(const QString &bus, const QString &dest, const QStr
 
     const quint64 id = m_nextCallId++;
     m_callKind.insert(id, kind);
+
+    if (qEnvironmentVariableIsSet("SONDE_DEBUG_CALL")) {
+        qWarning().noquote() << "[sonde] call" << iface + QLatin1Char('.') + member
+                             << "sig=" << (sig.isEmpty() ? QStringLiteral("(空)") : sig)
+                             << "args=" << QString::fromUtf8(a);
+    }
+
     auto *ctx = new CallCtx{ this, id };
     sonde_call(m_core, b.constData(), d.constData(), p.constData(), i.constData(),
                m.constData(), s.constData(), a.constData(), &sondeReplyTrampoline, ctx);
@@ -549,6 +577,44 @@ quint64 Bridge::callGetAllProperties(const QString &bus, const QString &dest,
                         QVariantList{ strNode(iface) }, 2);
 }
 
+QVariantMap Bridge::makeVariantArg(const QString &typeSig, const QString &valueText) const
+{
+    // 用签名生成类型树，填上用户输入，再包一层变体 —— Properties.Set 的第三个参数是 v
+    const QVariantList tys = const_cast<Bridge *>(this)->typeTree(typeSig);
+    QVariantMap inner;
+    if (tys.isEmpty()) {
+        inner = QVariantMap{ { QStringLiteral("sig"), QStringLiteral("s") },
+                             { QStringLiteral("kind"), QStringLiteral("str") },
+                             { QStringLiteral("text"), valueText },
+                             { QStringLiteral("items"), QVariantList{} } };
+    } else {
+        inner = tys.first().toMap();
+        inner[QStringLiteral("text")] = valueText;
+    }
+    return QVariantMap{
+        { QStringLiteral("sig"), QStringLiteral("v") },
+        { QStringLiteral("kind"), QStringLiteral("variant") },
+        { QStringLiteral("text"), typeSig.isEmpty() ? QStringLiteral("s") : typeSig },
+        { QStringLiteral("items"),
+          QVariantList{ QVariantMap{ { QStringLiteral("label"), QStringLiteral("value") },
+                                     { QStringLiteral("node"), inner } } } },
+    };
+}
+
+quint64 Bridge::callSetProperty(const QString &bus, const QString &dest, const QString &path,
+                                const QString &iface, const QString &prop,
+                                const QString &typeSig, const QString &valueText)
+{
+    const quint64 id = dispatchCall(bus, dest, path,
+                                    QStringLiteral("org.freedesktop.DBus.Properties"),
+                                    QStringLiteral("Set"), QStringLiteral("ssv"),
+                                    QVariantList{ strNode(iface), strNode(prop),
+                                                  makeVariantArg(typeSig, valueText) },
+                                    3);
+    m_callMeta.insert(id, QStringList{ iface, prop });
+    return id;
+}
+
 void Bridge::finishCall(quint64 id, const QByteArray &payload)
 {
     const int kind = m_callKind.take(id);
@@ -567,6 +633,12 @@ void Bridge::finishCall(quint64 id, const QByteArray &payload)
     const QString err = result.value(QStringLiteral("ok")).toBool()
                             ? QString()
                             : result.value(QStringLiteral("error")).toString();
+
+    if (kind == 3) {
+        emit propertyWritten(id, err.isEmpty(), err);
+        return;
+    }
+
     QVariantMap node;
     if (err.isEmpty()) {
         const QVariantList args = result.value(QStringLiteral("args")).toList();

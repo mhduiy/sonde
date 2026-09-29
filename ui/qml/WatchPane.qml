@@ -56,6 +56,14 @@ Rectangle {
                     font.pixelSize: 11
                 }
 
+                Button {
+                    text: bridge.monitoring ? "停止监听" : "开始监听"
+                    implicitHeight: 24
+                    onClicked: bridge.monitoring
+                               ? bridge.stopMonitor()
+                               : bridge.startMonitor(root.bus)
+                }
+
                 Rectangle {
                     Layout.preferredWidth: 1
                     Layout.fillHeight: true

@@ -6,7 +6,11 @@ import "kinds.js" as K
 /// 签名驱动的参数编辑器 + 调用。
 ///
 /// 表单完全由 D-Bus 签名生成（Rust 的 type_tree），不用手写 GVariant 文本。
-/// 值树在 JS 里递归拍平成行，界面用非递归列表渲染。
+///
+/// **关键点（踩过的坑）**：QML 把 JS 数组的元素交给 Repeater delegate 时，
+/// `modelData` 是**副本**，`modelData.node.text = x` 写不回去——表现就是
+/// 界面上填了参数，实际发出去却是空参数。所以这里 delegate 只拿 `index`，
+/// 通过 `rowAt(index)` 实时取真正的行对象，写回用 `setRowText(index, ...)`。
 ColumnLayout {
     id: root
 
@@ -23,12 +27,12 @@ ColumnLayout {
     property var resultRows: []
     property bool busy: false
     property double lastId: 0
+    /// rebuild 时自增，强制 delegate 重新读取行
+    property int rev: 0
 
     spacing: 8
 
     function clone(x) {
-        // 必须 JSON 往返：`property var` 持有 QVariantList 时元素是临时副本，
-        // 直接改 nodes[0].text 写不回去。
         return JSON.parse(JSON.stringify(x))
     }
 
@@ -40,6 +44,15 @@ ColumnLayout {
         rebuild()
     }
 
+    // ---- 行的实时读写（delegate 只能通过这两个函数碰数据）----
+    function rowAt(i) {
+        return root.rows[i]
+    }
+    function setRowText(i, t) {
+        if (root.rows[i])
+            root.rows[i].node.text = t
+    }
+
     function isComposite(kind) {
         return kind === "array" || kind === "dict" || kind === "struct" || kind === "variant"
     }
@@ -49,6 +62,7 @@ ColumnLayout {
         for (var i = 0; i < root.nodes.length; ++i)
             walk(root.nodes[i], 0, "[" + i + "]", null, -1, out)
         root.rows = out
+        root.rev = root.rev + 1
     }
 
     function walk(node, depth, label, parent, index, out) {
@@ -127,17 +141,22 @@ ColumnLayout {
                                   root.member, root.sig, root.nodes)
     }
 
-    /// 自检用：给第一个空的字符串参数填个值（便于让调用真的成功）
+    /// 自检用：给第一个空的字符串参数填个值（走和 delegate 相同的写回路径）
     function fillFirstString(v) {
-        for (var i = 0; i < root.nodes.length; ++i) {
-            var n = root.nodes[i]
+        for (var i = 0; i < root.rows.length; ++i) {
+            var n = root.rowAt(i).node
             if (n && n.kind === "str" && (n.text === undefined || n.text === "")) {
-                n.text = v
-                rebuild()
+                root.setRowText(i, v)
+                rebuild() // 让输入框回显填进去的值（setRowText 本身刻意不动 rev）
                 return true
             }
         }
         return false
+    }
+
+    /// 当前参数树的 JSON 预览（排查"参数到底发出去了没有"）
+    function argsJson() {
+        return JSON.stringify(root.nodes)
     }
 
     onSigChanged: reset()
@@ -156,11 +175,25 @@ ColumnLayout {
 
     Rectangle { Layout.fillWidth: true; height: 1; color: theme.border }
 
-    Label {
-        text: "参数" + (root.sig === "" ? "（无）" : "（" + root.sig + "）")
-        color: theme.textDim
-        font.bold: true
-        font.pixelSize: 11
+    RowLayout {
+        Layout.fillWidth: true
+        spacing: 6
+
+        Label {
+            text: "参数" + (root.sig === "" ? "（无）" : "（" + root.sig + "）")
+            color: theme.textDim
+            font.bold: true
+            font.pixelSize: 11
+        }
+        Item { Layout.fillWidth: true }
+        ToolButton {
+            text: "复制参数"
+            implicitHeight: 22
+            visible: root.nodes.length > 0
+            onClicked: clip.put(JSON.stringify(root.nodes, null, 2))
+            ToolTip.visible: hovered
+            ToolTip.text: "复制当前参数树的 JSON，方便确认参数到底长什么样"
+        }
     }
 
     Label {
@@ -175,7 +208,7 @@ ColumnLayout {
     ScrollView {
         Layout.fillWidth: true
         Layout.preferredHeight: root.rows.length === 0 ? 0
-                              : Math.min(280, root.rows.length * 32 + 8)
+                              : Math.min(300, root.rows.length * 32 + 8)
         clip: true
         visible: root.rows.length > 0
 
@@ -184,20 +217,24 @@ ColumnLayout {
             spacing: 3
 
             Repeater {
-                model: root.rows
+                model: root.rows.length
                 delegate: RowLayout {
-                    required property var modelData
+                    id: editRow
+                    required property int index
+                    // 依赖 rev，rebuild 后重新取到行
+                    readonly property var row: { root.rev; return root.rowAt(index) }
+
                     Layout.fillWidth: true
                     spacing: 6
 
                     Item {
-                        Layout.preferredWidth: modelData.depth * 14
+                        Layout.preferredWidth: editRow.row.depth * 14
                         Layout.fillHeight: true
                     }
 
                     Label {
                         Layout.preferredWidth: 74
-                        text: modelData.label
+                        text: editRow.row.label
                         color: theme.textFaint
                         font.family: "monospace"
                         font.pixelSize: 11
@@ -206,37 +243,38 @@ ColumnLayout {
 
                     TextField {
                         Layout.fillWidth: true
-                        visible: !modelData.composite && modelData.node.kind !== "variant"
-                        text: modelData.node.text !== undefined ? ("" + modelData.node.text) : ""
-                        placeholderText: modelData.kind
+                        visible: !editRow.row.composite && editRow.row.node.kind !== "variant"
+                        text: editRow.row.node.text !== undefined
+                              ? ("" + editRow.row.node.text) : ""
+                        placeholderText: editRow.row.kind
                         font.family: "monospace"
                         font.pixelSize: 12
-                        onTextEdited: modelData.node.text = text
+                        onTextEdited: root.setRowText(editRow.index, text)
                     }
 
                     RowLayout {
                         Layout.fillWidth: true
                         spacing: 4
-                        visible: modelData.node.kind === "variant"
+                        visible: editRow.row.node.kind === "variant"
                         TextField {
                             Layout.preferredWidth: 64
-                            text: modelData.node.text || "s"
+                            text: editRow.row.node.text || "s"
                             placeholderText: "内层签名"
                             font.family: "monospace"
                             font.pixelSize: 12
-                            onEditingFinished: modelData.node.text = text
+                            onEditingFinished: editRow.row.node.text = text
                         }
                         Button {
                             text: "应用"
                             implicitHeight: 26
                             onClicked: {
-                                modelData.node.text = modelData.node.text || "s"
-                                root.applyVariant(modelData.node)
+                                editRow.row.node.text = editRow.row.node.text || "s"
+                                root.applyVariant(editRow.row.node)
                             }
                         }
                         Label {
                             Layout.fillWidth: true
-                            text: root.summaryOf(modelData.node)
+                            text: root.summaryOf(editRow.row.node)
                             color: theme.accent
                             font.family: "monospace"
                             font.pixelSize: 11
@@ -244,9 +282,9 @@ ColumnLayout {
                     }
 
                     Label {
-                        visible: modelData.composite && modelData.node.kind !== "variant"
+                        visible: editRow.row.composite && editRow.row.node.kind !== "variant"
                         Layout.preferredWidth: 150
-                        text: root.summaryOf(modelData.node)
+                        text: root.summaryOf(editRow.row.node)
                         color: theme.accent
                         font.family: "monospace"
                         font.pixelSize: 11
@@ -254,25 +292,26 @@ ColumnLayout {
 
                     Label {
                         Layout.preferredWidth: 36
-                        text: modelData.kind
+                        text: editRow.row.kind
                         color: theme.textFaint
                         font.family: "monospace"
                         font.pixelSize: 10
                     }
 
                     Button {
-                        visible: modelData.node.kind === "array" || modelData.node.kind === "dict"
+                        visible: editRow.row.node.kind === "array"
+                                 || editRow.row.node.kind === "dict"
                         text: "＋"
                         implicitWidth: 30
                         implicitHeight: 26
-                        onClicked: root.addChild(modelData.node)
+                        onClicked: root.addChild(editRow.row.node)
                     }
                     Button {
-                        visible: modelData.removable
+                        visible: editRow.row.removable
                         text: "－"
                         implicitWidth: 30
                         implicitHeight: 26
-                        onClicked: root.removeChild(modelData)
+                        onClicked: root.removeChild(editRow.row)
                     }
                 }
             }
@@ -306,6 +345,12 @@ ColumnLayout {
             font.pixelSize: 11
         }
         Item { Layout.fillWidth: true }
+        ToolButton {
+            visible: root.result !== null && root.result.ok
+            text: "复制返回"
+            implicitHeight: 22
+            onClicked: clip.put(JSON.stringify(root.result, null, 2))
+        }
     }
 
     Label {
@@ -320,36 +365,17 @@ ColumnLayout {
 
     ColumnLayout {
         Layout.fillWidth: true
-        spacing: 3
+        spacing: 4
         visible: root.resultRows.length > 0
 
         Repeater {
             model: root.resultRows
-            delegate: RowLayout {
+            delegate: ValueRow {
                 required property var modelData
-                Layout.fillWidth: true
-                spacing: 8
-
-                Item {
-                    Layout.preferredWidth: modelData.depth * 14
-                    Layout.fillHeight: true
-                }
-                Label {
-                    Layout.preferredWidth: 92
-                    text: modelData.label
-                    color: theme.textFaint
-                    font.family: "monospace"
-                    font.pixelSize: 11
-                }
-                Label {
-                    Layout.fillWidth: true
-                    text: modelData.display
-                    color: K.valueColor(theme, modelData.kind, modelData.composite)
-                    font.family: "monospace"
-                    font.pixelSize: 12
-                    wrapMode: Text.WrapAnywhere
-                }
+                row: modelData
             }
         }
     }
+
+    Clip { id: clip }
 }

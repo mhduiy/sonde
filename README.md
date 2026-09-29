@@ -37,23 +37,35 @@
 
 ### 怎么用
 
-1. 左边**点一个服务** → 中间树会**自动定位到与服务名对应的对象路径**
+1. 左边**搜索 + 点一个服务** → 中间树会**自动定位到与服务名对应的对象路径**
    （`org.deepin.dde.Timedate1` → `/org/deepin/dde/Timedate1`），并且把它自己的接口一起展开，
    方法/信号/属性直接就在眼前。不用在几十个兄弟对象里翻找。
-2. 中间**点一个方法** → 右边出现签名驱动的参数表单，填完「发送调用」
-3. 中间**点一个属性** → 右边「读取当前值」
-4. **右键任意节点** → 「加入监听列表」。底部面板会自动展开、自动切到"只看监听列表"，
+2. 中间**单击**选中；**双击**有子节点的就展开/收起，双击属性就直接读值
+3. **点一个方法** → 右边出现签名驱动的参数表单，填完「发送调用」
+4. **点（或双击）一个属性** → 右边读出当前值；可设「定时读取」轮询；
+   属性可写时还会出现写入表单（走 `Properties.Set`，写完自动回读确认）
+5. **右键任意节点** → 「加入监听列表」。底部面板会自动展开、自动切到"只看监听列表"，
    之后总线上任何匹配的消息都会实时出现在里面
-5. 底部消息**点一下**可以看它的完整解码内容，还能一键「监听这条消息的来源」
+6. 底部消息**点一下**可以看它的完整解码内容，还能一键「监听这条消息的来源」
 
-对象树标题栏上的几个按钮：
+**返回值里的 JSON 会被自动识别**：很多接口（例如
+`org.deepin.dde.Appearance1.List("icon")`）把 JSON 塞在字符串里返回。
+Sonde 认出来之后会打上 `JSON` 标记，可以一键「格式化」查看，也有「复制」按钮。
 
-| 按钮 | 作用 |
-|---|---|
-| **定位** | 重新跳到与服务名对应的对象路径 |
-| **精简** | 隐藏 `org.freedesktop.DBus.*` 标准接口（默认开），只留下服务自己的接口 |
-| 展开 / 折叠 | 整棵树展开或折叠 |
-| ⟳ | 重新内省
+左侧服务列表：已知服务排在前面，`:1.x` 这类唯一名排到最后。
+
+各面板标题栏上的按钮：
+
+| 位置 | 按钮 | 作用 |
+|---|---|---|
+| 服务 | 搜索框 | 按名字过滤服务（就在服务列表正上方） |
+| 对象树 | 过滤本树 | 只显示匹配的节点及其祖先，自动展开 |
+| 对象树 | **定位** | 重新跳到与服务名对应的对象路径 |
+| 对象树 | **精简** | 隐藏 `org.freedesktop.DBus.*` 标准接口（默认开） |
+| 对象树 | 展开 / 折叠 / ⟳ | 整棵树展开、折叠、重新内省 |
+| 监听面板 | **开始监听 / 停止监听** | 收发开关（在监听面板上，不在主工具栏） |
+| 监听面板 | 只看监听列表 | 只显示命中监听列表的消息 |
+| 监听面板 | 暂停 / 清空消息 | 暂停（消息进缓冲不丢）和清空 |
 
 ### 右键能干什么
 
@@ -102,10 +114,18 @@ QML 不允许组件自我实例化，递归树渲染器会直接报错；而且�
 QML 用一个 `ListView` 加缩进渲染。展开/折叠完全由自己掌控，没有 `QAbstractItemModel`
 树模型的那些坑。
 
-**为什么 `property var` 要用 JSON 往返。**
-QML 里 `property var` 持有 `QVariantList` 时，元素访问返回的是**临时副本**，
-`nodes[0].text = x` 会静默写不回去。`CallForm` 里所有来自 Rust 的节点都先过一遍
-`JSON.parse(JSON.stringify(...))` 变成纯 JS 结构，赋值才生效。
+**为什么 `property var` 要用 JSON 往返，以及 delegate 只能拿 index。**
+
+这一类坑踩了两次，都是"界面看起来填了、实际没发出去"：
+
+1. QML 里 `property var` 持有**从 C++ 返回的** `QVariantList` 时，元素访问得到的是
+   **临时副本**，`nodes[0].text = x` 静默写不回去。所以来自 Rust 的节点先过一遍
+   `JSON.parse(JSON.stringify(...))` 变成纯 JS 结构。
+2. 更隐蔽的一次：QML 把 JS 数组的元素交给 `Repeater` 的 delegate 时，
+   `modelData` 同样是**副本**。参数编辑器原来写 `modelData.node.text = text`，
+   于是界面上明明填了参数、发出去却是空的——用 `dbus-monitor` 抓包才看出来。
+   现在 delegate 只拿 `index`，通过 `rowAt(index)` 实时取真正的行对象、
+   用 `setRowText(index, ...)` 写回。
 
 **线程规则（硬性）。** Rust 的监控线程和工作线程绝不直接碰 QObject，
 一律 `Qt::QueuedConnection` 投递回 GUI 线程。监控回调按 **256 条 / 80ms** 批量下发，
@@ -196,11 +216,32 @@ dbus-monitor: unable to enable new-style monitoring:
 --bus session|system    要监听的总线（默认 session）
 --service <dest>        启动时自动打开的服务
 --dark                  以深色主题启动
---demo                  自检：监听 + 打开服务 + 加一条监听 + 选个方法真发一次调用
+--demo                  自检：监听 + 打开服务 + 加一条监听 + 选个方法/属性真跑一次
+--demo-method <name>    自检时优先选中的方法或属性名
+--demo-seed <value>     自检时给第一个字符串参数填的值
 --dump-tree             打印对象树的行（id/kind/name/depth）后退出，调试树结构用
 --screenshot <path>     渲染一帧保存 PNG 后退出
 --screenshot-delay <ms> 截图前等待毫秒数
 ```
+
+### 无界面调用（可脚本化）
+
+```bash
+# 读属性
+./build/sonde --call org.freedesktop.DBus.Properties.Get \
+  --call-dest org.deepin.dde.Appearance1 --call-path /org/deepin/dde/Appearance1 \
+  --call-sig ss --call-args '["org.deepin.dde.Appearance1","IconTheme"]'
+
+# 调方法
+./build/sonde --call org.deepin.dde.Appearance1.List \
+  --call-dest org.deepin.dde.Appearance1 --call-path /org/deepin/dde/Appearance1 \
+  --call-sig s --call-args '["icon"]'
+```
+
+结果以 JSON 打到 stdout。`--call-args` 里如果传的是带 `kind` 的对象，
+会被当作节点树直接使用（用来测 `a{sv}` / `v` 这类复杂类型）。
+设置环境变量 `SONDE_DEBUG_CALL=1` 可以把每次调用的实际参数 JSON 打到 stderr——
+排查"参数到底发出去没有"很有用。
 
 `--demo` 是为无显示环境（`QT_QPA_PLATFORM=offscreen`）回归准备的，
 一条命令就能把浏览、监听、调用三条链路全走一遍。

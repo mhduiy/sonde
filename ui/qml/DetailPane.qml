@@ -3,21 +3,34 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import "kinds.js" as K
 
-/// 右栏：选中节点的详情。按节点类型给出不同的内容——
-/// 方法给参数编辑器，属性给读取按钮，信号给签名和加监听入口。
+/// 右栏：选中节点的详情。
+/// 方法给参数编辑器，属性给读取（可轮询）+ 写入，信号给签名和加监听入口。
 Rectangle {
     id: root
 
     property var node: null
     property string bus: "session"
 
-    property var propValue: null
+    // 属性读取
     property var propRows: []
     property string propError: ""
     property double propLastId: 0
     property string propName: ""
+    property string propReadAt: ""
+    property int pollMs: 0
+
+    // 属性写入
+    property string writeError: ""
+    property bool writeOk: false
+    property double writeLastId: 0
 
     color: theme.surface
+
+    readonly property bool isProperty: node !== null && node.kind === "property"
+    readonly property bool readable: isProperty
+                                     && (node.access === "" || node.access.indexOf("read") >= 0)
+    readonly property bool writable: isProperty
+                                     && (node.access || "").indexOf("write") >= 0
 
     function watchKindOf(n) {
         if (!n)
@@ -39,13 +52,22 @@ Rectangle {
     }
 
     function readProperty(n) {
-        root.propTarget = n
+        if (!n)
+            return
         root.propName = n.member
         root.propError = ""
-        root.propValue = null
         root.propRows = []
         root.propLastId = bridge.callGetProperty(n.bus || root.bus, n.dest, n.path,
                                                 n.iface, n.member)
+    }
+
+    function writeProperty(n, value) {
+        if (!n)
+            return
+        root.writeError = ""
+        root.writeOk = false
+        root.writeLastId = bridge.callSetProperty(n.bus || root.bus, n.dest, n.path,
+                                                 n.iface, n.member, n.argType, value)
     }
 
     /// 自检：把选中的方法填一个能跑通的值并发出去
@@ -56,8 +78,11 @@ Rectangle {
 
     onNodeChanged: {
         propError = ""
-        propValue = null
         propRows = []
+        propReadAt = ""
+        writeError = ""
+        writeOk = false
+        pollMs = 0
     }
 
     Connections {
@@ -66,10 +91,26 @@ Rectangle {
             if (id !== root.propLastId)
                 return
             root.propError = error
-            root.propValue = node
             root.propRows = (error === "" && node && Object.keys(node).length > 0)
                             ? bridge.flattenNodes([node]) : []
+            root.propReadAt = K.clockOf(Date.now() * 1000)
         }
+        function onPropertyWritten(id, ok, error) {
+            if (id !== root.writeLastId)
+                return
+            root.writeOk = ok
+            root.writeError = error
+            if (ok && root.readable)
+                root.readProperty(root.node) // 写完立刻回读，确认新值
+        }
+    }
+
+    // 属性轮询
+    Timer {
+        interval: Math.max(200, root.pollMs)
+        repeat: true
+        running: root.pollMs > 0 && root.readable
+        onTriggered: root.readProperty(root.node)
     }
 
     ColumnLayout {
@@ -162,7 +203,11 @@ Rectangle {
             horizontalAlignment: Text.AlignHCenter
             verticalAlignment: Text.AlignVCenter
             wrapMode: Text.WordWrap
-            text: "在中间的树里点一个节点\n\n方法可以在这里填参数直接调用；\n属性可以读取当前值；\n信号可以加入监听列表。"
+            text: "在中间的树里点一个节点\n\n"
+                  + "· 双击能展开/收起；双击属性会直接读值\n"
+                  + "· 方法可以在这里填参数直接调用\n"
+                  + "· 属性可以读取（支持定时轮询）也可以写入\n"
+                  + "· 信号可以加入监听列表"
             color: theme.textFaint
             font.pixelSize: 12
         }
@@ -190,6 +235,160 @@ Rectangle {
                     iface: root.node ? root.node.iface : ""
                     member: root.node ? root.node.member : ""
                     sig: root.node ? root.node.inSig : ""
+                }
+
+                // ---- 属性：读取 + 轮询 + 写入 ----
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: 8
+                    visible: root.isProperty
+
+                    GridLayout {
+                        Layout.fillWidth: true
+                        columns: 2
+                        columnSpacing: 12
+
+                        Label { text: "类型"; color: theme.textDim; font.pixelSize: 11 }
+                        Label {
+                            text: root.node ? root.node.argType : ""
+                            color: theme.valNum
+                            font.family: "monospace"
+                            font.pixelSize: 12
+                        }
+                        Label { text: "访问"; color: theme.textDim; font.pixelSize: 11 }
+                        Label {
+                            text: root.node ? root.node.access : ""
+                            color: theme.text
+                            font.family: "monospace"
+                            font.pixelSize: 12
+                        }
+                    }
+
+                    // 读取 + 轮询
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 8
+
+                        Button {
+                            text: "读取当前值"
+                            enabled: root.readable
+                            onClicked: root.readProperty(root.node)
+                        }
+                        Label { text: "定时读取"; color: theme.textDim; font.pixelSize: 11 }
+                        ComboBox {
+                            id: pollBox
+                            Layout.preferredWidth: 104
+                            model: ["关闭", "1 秒", "2 秒", "5 秒"]
+                            enabled: root.readable
+                            onActivated: {
+                                var ms = [0, 1000, 2000, 5000]
+                                root.pollMs = ms[currentIndex]
+                                if (root.pollMs > 0)
+                                    root.readProperty(root.node)
+                            }
+                        }
+                        ToolButton {
+                            visible: root.propRows.length > 0
+                            text: "复制值"
+                            implicitHeight: 22
+                            onClicked: clip.put(JSON.stringify(root.propRows.length === 1
+                                                               ? root.propRows[0].display
+                                                               : root.propRows, null, 2))
+                        }
+                        Item { Layout.fillWidth: true }
+                        Label {
+                            visible: root.propReadAt !== ""
+                            text: "读取于 " + root.propReadAt
+                                  + (root.pollMs > 0 ? "（轮询中）" : "")
+                            color: theme.textFaint
+                            font.pixelSize: 10
+                        }
+                    }
+
+                    Label {
+                        Layout.fillWidth: true
+                        visible: root.propError !== ""
+                        wrapMode: Text.WordWrap
+                        text: root.propError !== "" ? ("✗  " + root.propError) : ""
+                        color: theme.error
+                        font.family: "monospace"
+                        font.pixelSize: 11
+                    }
+
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 4
+                        visible: root.propRows.length > 0
+
+                        Repeater {
+                            model: root.propRows
+                            delegate: ValueRow {
+                                required property var modelData
+                                row: modelData
+                            }
+                        }
+                    }
+
+                    // 写入
+                    Rectangle {
+                        Layout.fillWidth: true
+                        Layout.topMargin: 4
+                        visible: root.writable
+                        implicitHeight: writeCol.implicitHeight + 16
+                        color: theme.surfaceAlt
+                        radius: 4
+
+                        ColumnLayout {
+                            id: writeCol
+                            anchors.fill: parent
+                            anchors.margins: 8
+                            spacing: 6
+
+                            Label {
+                                text: "写入新值（" + (root.node ? root.node.argType : "")
+                                      + "，走 org.freedesktop.DBus.Properties.Set）"
+                                color: theme.textDim
+                                font.bold: true
+                                font.pixelSize: 11
+                            }
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: 6
+
+                                TextField {
+                                    id: writeField
+                                    Layout.fillWidth: true
+                                    placeholderText: "新值"
+                                    font.family: "monospace"
+                                    font.pixelSize: 12
+                                }
+                                Button {
+                                    text: "写入"
+                                    enabled: writeField.text !== ""
+                                    onClicked: root.writeProperty(root.node, writeField.text)
+                                }
+                            }
+
+                            Label {
+                                Layout.fillWidth: true
+                                visible: root.writeError !== ""
+                                wrapMode: Text.WordWrap
+                                text: root.writeError !== "" ? ("✗  " + root.writeError) : ""
+                                color: theme.error
+                                font.family: "monospace"
+                                font.pixelSize: 11
+                            }
+                            Label {
+                                Layout.fillWidth: true
+                                visible: root.writeError === "" && root.writeOk
+                                text: "✓  写入成功（已回读确认）"
+                                color: theme.ok
+                                font.family: "monospace"
+                                font.pixelSize: 11
+                            }
+                        }
+                    }
                 }
 
                 // ---- 信号 ----
@@ -230,88 +429,6 @@ Rectangle {
                     }
                 }
 
-                // ---- 属性 ----
-                ColumnLayout {
-                    Layout.fillWidth: true
-                    spacing: 8
-                    visible: root.node !== null && root.node.kind === "property"
-
-                    GridLayout {
-                        Layout.fillWidth: true
-                        columns: 2
-                        columnSpacing: 12
-
-                        Label { text: "类型"; color: theme.textDim; font.pixelSize: 11 }
-                        Label {
-                            text: root.node ? root.node.argType : ""
-                            color: theme.valNum
-                            font.family: "monospace"
-                            font.pixelSize: 12
-                        }
-                        Label { text: "访问"; color: theme.textDim; font.pixelSize: 11 }
-                        Label {
-                            text: root.node ? root.node.access : ""
-                            color: theme.text
-                            font.family: "monospace"
-                            font.pixelSize: 12
-                        }
-                    }
-
-                    RowLayout {
-                        spacing: 8
-                        Button {
-                            text: "读取当前值"
-                            enabled: root.node !== null
-                                     && (root.node.access === "" || root.node.access.indexOf("read") >= 0)
-                            onClicked: root.readProperty(root.node)
-                        }
-                        Label {
-                            visible: root.propError !== ""
-                            text: "✗  " + root.propError
-                            color: theme.error
-                            font.family: "monospace"
-                            font.pixelSize: 11
-                            wrapMode: Text.WordWrap
-                            Layout.fillWidth: true
-                        }
-                        Label {
-                            visible: root.propError === "" && root.propRows.length > 0
-                            text: "✓  " + root.propName
-                            color: theme.ok
-                            font.family: "monospace"
-                            font.pixelSize: 11
-                        }
-                    }
-
-                    ColumnLayout {
-                        Layout.fillWidth: true
-                        spacing: 3
-                        visible: root.propRows.length > 0
-
-                        Repeater {
-                            model: root.propRows
-                            delegate: RowLayout {
-                                required property var modelData
-                                Layout.fillWidth: true
-                                spacing: 8
-
-                                Item {
-                                    Layout.preferredWidth: modelData.depth * 14
-                                    Layout.fillHeight: true
-                                }
-                                Label {
-                                    Layout.fillWidth: true
-                                    text: modelData.display
-                                    color: K.valueColor(theme, modelData.kind, modelData.composite)
-                                    font.family: "monospace"
-                                    font.pixelSize: 12
-                                    wrapMode: Text.WrapAnywhere
-                                }
-                            }
-                        }
-                    }
-                }
-
                 // ---- 接口 ----
                 ColumnLayout {
                     Layout.fillWidth: true
@@ -324,7 +441,7 @@ Rectangle {
                         text: "接口 " + (root.node ? root.node.name : "") + "\n\n"
                               + "在树里展开可以看到它的方法、信号和属性：\n"
                               + "  · 点方法 → 在这里填参数直接调用\n"
-                              + "  · 点属性 → 读取当前值\n"
+                              + "  · 双击属性 → 直接读取当前值\n"
                               + "  · 点信号 → 加入监听列表看实时触发\n\n"
                               + "「＋ 监听」会监听这个接口下的全部消息。"
                         color: theme.textDim
@@ -392,7 +509,5 @@ Rectangle {
         }
     }
 
-    // 给 readProperty 用的临时目标
-    property var propTarget: null
     Clip { id: clip }
 }

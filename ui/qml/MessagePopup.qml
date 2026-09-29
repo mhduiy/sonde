@@ -154,36 +154,9 @@ Popup {
 
                 Repeater {
                     model: root.rows
-                    delegate: RowLayout {
+                    delegate: ValueRow {
                         required property var modelData
-                        Layout.fillWidth: true
-                        spacing: 8
-
-                        Item {
-                            Layout.preferredWidth: modelData.depth * 14
-                            Layout.fillHeight: true
-                        }
-                        Label {
-                            Layout.preferredWidth: 120
-                            text: modelData.label
-                            color: theme.textFaint
-                            font.family: "monospace"
-                            font.pixelSize: 11
-                        }
-                        Label {
-                            Layout.fillWidth: true
-                            text: modelData.display
-                            color: K.valueColor(theme, modelData.kind, modelData.composite)
-                            font.family: "monospace"
-                            font.pixelSize: 12
-                            wrapMode: Text.WrapAnywhere
-                        }
-                        Label {
-                            text: modelData.sig
-                            color: theme.textFaint
-                            font.family: "monospace"
-                            font.pixelSize: 10
-                        }
+                        row: modelData
                     }
                 }
 
