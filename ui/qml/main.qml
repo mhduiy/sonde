@@ -19,21 +19,15 @@ D.ApplicationWindow {
     D.DWindow.enabled: true
     flags: Qt.Window | Qt.WindowCloseButtonHint | Qt.WindowTitleHint
            | Qt.WindowMinimizeButtonHint | Qt.WindowMaximizeButtonHint
-    // 背景交给 DTK 画（圆角 + 阴影），所以窗口本身透明
-    color: "transparent"
+    // 用不透明的主题色。不照抄 dde-control-center 的
+    // `color: "transparent"` + StyledBehindWindowBlur —— 那是它刻意做毛玻璃，
+    // 而且它不用 header:，模糊层能盖住整窗；用 header: 时模糊层只盖内容区，
+    // 标题栏那条会没有背景、直接透出桌面。
+    color: theme.bg
 
     // 共享状态
     property string busName: "session"
     property var selectedNode: null
-
-    // 窗口背景：DTK 的模糊/底色层，负责圆角与阴影区域
-    D.StyledBehindWindowBlur {
-        anchors.fill: parent
-        control: root
-        blendColor: (D.DTK.themeType === D.ApplicationHelper.DarkType)
-                    ? Qt.rgba(0.06, 0.06, 0.06, 0.85)
-                    : Qt.rgba(1, 1, 1, 0.85)
-    }
 
     onBusNameChanged: {
         if (tree.service !== "")
