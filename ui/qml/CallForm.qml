@@ -30,6 +30,9 @@ ColumnLayout {
     property double lastId: 0
     /// rebuild 时自增，强制 delegate 重新读取行
     property int rev: 0
+    /// 用表格编辑的顶层参数下标 / 对应的形状信息
+    property var tableIdx: []
+    property var tableInfos: []
 
     spacing: 8
 
@@ -58,10 +61,125 @@ ColumnLayout {
         return kind === "array" || kind === "dict" || kind === "struct" || kind === "variant"
     }
 
+    function isScalarKind(kind) {
+        return kind !== "" && !isComposite(kind)
+    }
+
+    /// 记录形态的顶层参数才用表格编辑：
+    /// - dict 且值类型是标量（a{ss} / a{sv} 里的标量变体）
+    /// - array 且元素是"字段全是标量"的 struct
+    /// 其余（嵌套、复杂结构）继续走行式编辑器。
+    function recordInfo(i) {
+        var n = root.nodes[i]
+        if (!n)
+            return null
+        if (n.kind === "dict") {
+            var vt = n.valTemplate ? (n.valTemplate.kind || "") : ""
+            var vScalar = root.isScalarKind(vt)
+                || (vt === "variant" && n.valTemplate && n.valTemplate.items
+                    && n.valTemplate.items[0] && n.valTemplate.items[0].node
+                    && root.isScalarKind(n.valTemplate.items[0].node.kind || ""))
+            if (!vScalar)
+                return null
+            return { kind: "dict", cols: ["键", "值"] }
+        }
+        if (n.kind === "array") {
+            var et = n.elemTemplate
+            if (!et || et.kind !== "struct")
+                return null
+            var fields = et.items || []
+            var cols = []
+            for (var f = 0; f < fields.length; ++f) {
+                var fk = fields[f].node ? (fields[f].node.kind || "") : ""
+                if (!root.isScalarKind(fk))
+                    return null
+                cols.push("" + f)
+            }
+            if (cols.length === 0)
+                return null
+            return { kind: "structArray", cols: cols }
+        }
+        return null
+    }
+
+    function recordRows(i) {
+        root.rev // 依赖 rev，增删行后重新求值
+        var n = root.nodes[i]
+        return (n && n.items) ? n.items.length : 0
+    }
+
+    function cellWidth(info, c) {
+        if (info && info.kind === "dict")
+            return c === 0 ? 170 : 280
+        return 108
+    }
+
+    function cellText(i, r, c) {
+        root.rev // 依赖 rev：程序化填值后 rebuild 能回显，用户输入时不 rebuild 所以不打断焦点
+        var n = root.nodes[i]
+        if (!n || !n.items || !n.items[r])
+            return ""
+        if (n.kind === "dict") {
+            var e = n.items[r]
+            var node = (c === 0) ? e.key : e.val
+            return node && node.text !== undefined ? ("" + node.text) : ""
+        }
+        var st = n.items[r].node
+        var f = (st && st.items && st.items[c]) ? st.items[c].node : null
+        return f && f.text !== undefined ? ("" + f.text) : ""
+    }
+
+    function setCellText(i, r, c, t) {
+        var n = root.nodes[i]
+        if (!n || !n.items || !n.items[r])
+            return
+        if (n.kind === "dict") {
+            var e = n.items[r]
+            var node = (c === 0) ? e.key : e.val
+            if (node)
+                node.text = t
+            return
+        }
+        var st = n.items[r].node
+        if (st && st.items && st.items[c] && st.items[c].node)
+            st.items[c].node.text = t
+    }
+
+    function addRecordRow(i) {
+        var n = root.nodes[i]
+        if (!n)
+            return
+        addChild(n) // 复用：dict 推 key/val 模板，array 推 elemTemplate，内部会 rebuild
+    }
+
+    function removeRecordRow(i, r) {
+        var n = root.nodes[i]
+        if (!n || !n.items)
+            return
+        n.items.splice(r, 1)
+        rebuild()
+    }
+
     function rebuild() {
+        // 先决定哪些顶层参数走"表格编辑"（记录形态），其余走行式编辑器
+        var idx = []
+        var infos = []
+        for (var i = 0; i < root.nodes.length; ++i) {
+            var ri = root.recordInfo(i)
+            if (ri) {
+                idx.push(i)
+                infos.push(ri)
+            }
+        }
+        root.tableIdx = idx
+        root.tableInfos = infos
+
         var out = []
-        for (var i = 0; i < root.nodes.length; ++i)
-            walk(root.nodes[i], 0, "[" + i + "]", null, -1, out)
+        for (var j = 0; j < root.nodes.length; ++j) {
+            if (idx.indexOf(j) >= 0)
+                continue // 这个参数交给表格渲染
+            walk(root.nodes[j], 0, "[" + j + "]", null, -1, out)
+        }
         root.rows = out
         root.rev = root.rev + 1
     }
@@ -155,6 +273,23 @@ ColumnLayout {
         return false
     }
 
+    /// 自检用：给第一个记录形态参数加一行（走和表格相同的写回路径）
+    function fillFirstRecord(key, value) {
+        if (root.tableIdx.length === 0)
+            return false
+        var p = root.tableIdx[0]
+        root.addRecordRow(p)
+        var r = root.recordRows(p) - 1
+        if (root.tableInfos[0].kind === "dict") {
+            root.setCellText(p, r, 0, key)
+            root.setCellText(p, r, 1, value)
+        } else {
+            root.setCellText(p, r, 0, value)
+        }
+        rebuild() // 让单元格回显（setCellText 本身不动 rev，避免打断用户输入）
+        return true
+    }
+
     /// 当前参数树的 JSON 预览（排查"参数到底发出去了没有"）
     function argsJson() {
         return JSON.stringify(root.nodes)
@@ -199,10 +334,127 @@ ColumnLayout {
 
     Label {
         Layout.fillWidth: true
-        visible: root.rows.length === 0
+        visible: root.rows.length === 0 && root.tableIdx.length === 0
         text: "该签名没有参数，直接发送即可。"
         color: theme.textFaint
         font.pixelSize: 11
+    }
+
+    // ---------------------------------------------------------- 记录形态参数：表格编辑
+    ColumnLayout {
+        Layout.fillWidth: true
+        spacing: 10
+        visible: root.tableIdx.length > 0
+
+        Repeater {
+            model: root.tableIdx
+            delegate: ColumnLayout {
+                id: tblock
+                required property int index
+                readonly property int p: root.tableIdx[index]
+                readonly property var info: root.tableInfos[index]
+
+                Layout.fillWidth: true
+                spacing: 4
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 6
+
+                    Label {
+                        text: "[" + tblock.p + "]   "
+                              + (root.nodes[tblock.p] ? root.nodes[tblock.p].kind : "")
+                              + "   " + (root.nodes[tblock.p] ? root.nodes[tblock.p].sig : "")
+                              + "   （表格编辑）"
+                        color: theme.textDim
+                        font.bold: true
+                        font.family: "monospace"
+                        font.pixelSize: 11
+                    }
+                    Item { Layout.fillWidth: true }
+                    D.ToolButton {
+                        text: "＋ 加一行"
+                        implicitHeight: 22
+                        onClicked: root.addRecordRow(tblock.p)
+                    }
+                }
+
+                Row {
+                    Repeater {
+                        model: tblock.info.cols
+                        delegate: Rectangle {
+                            required property int index
+                            required property var modelData
+                            width: root.cellWidth(tblock.info, index)
+                            height: 22
+                            color: theme.surfaceAlt
+                            Rectangle {
+                                anchors.right: parent.right
+                                anchors.bottom: parent.bottom
+                                width: 1
+                                height: parent.height + 1
+                                color: theme.border
+                            }
+                            Rectangle {
+                                anchors.left: parent.left
+                                anchors.right: parent.right
+                                anchors.bottom: parent.bottom
+                                height: 1
+                                color: theme.border
+                            }
+                            Label {
+                                anchors.fill: parent
+                                anchors.leftMargin: 6
+                                verticalAlignment: Text.AlignVCenter
+                                text: modelData
+                                color: theme.textDim
+                                font.bold: true
+                                font.family: "monospace"
+                                font.pixelSize: 10
+                            }
+                        }
+                    }
+                }
+
+                Repeater {
+                    model: root.recordRows(tblock.p)
+                    delegate: Row {
+                        id: trow
+                        required property int index
+
+                        Repeater {
+                            model: tblock.info.cols
+                            delegate: TextField {
+                                required property int index
+                                width: root.cellWidth(tblock.info, index)
+                                height: 26
+                                text: root.cellText(tblock.p, trow.index, index)
+                                placeholderText: index === 0 && tblock.info.kind === "dict"
+                                                 ? "键" : "值"
+                                font.family: "monospace"
+                                font.pixelSize: 11
+                                onTextEdited: root.setCellText(tblock.p, trow.index, index, text)
+                            }
+                        }
+                        D.ToolButton {
+                            text: "✕"
+                            implicitWidth: 26
+                            implicitHeight: 26
+                            onClicked: root.removeRecordRow(tblock.p, trow.index)
+                            ToolTip.visible: hovered
+                            ToolTip.text: "删掉这一行"
+                        }
+                    }
+                }
+
+                Label {
+                    visible: root.recordRows(tblock.p) === 0
+                    text: "还没有条目，点「＋ 加一行」"
+                    color: theme.textFaint
+                    font.pixelSize: 10
+                }
+            }
+        }
     }
 
     // ---------------------------------------------------------- 参数编辑区

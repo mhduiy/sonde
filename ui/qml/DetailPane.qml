@@ -74,7 +74,8 @@ Rectangle {
 
     /// 自检：把选中的方法填一个能跑通的值并发出去
     function demoRun(seed) {
-        callForm.fillFirstString(seed)
+        if (!callForm.fillFirstString(seed))
+            callForm.fillFirstRecord("demo", seed)
         callForm.invoke()
     }
 
