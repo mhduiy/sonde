@@ -23,17 +23,9 @@
 
 namespace {
 
-/// DTK 自己负责控件主题。用 DTK 之后**不要**再调 QGuiApplication::setPalette，
-/// 否则 DTK 会警告 "Don't use it on DTK application"。
-void applyDtkTheme(const Theme &t)
-{
 #ifdef SONDE_WITH_DTK
-    using Helper = Dtk::Gui::DGuiApplicationHelper;
-    Helper::instance()->setPaletteType(t.dark() ? Helper::DarkType : Helper::LightType);
-#else
-    Q_UNUSED(t)
+using DtkHelper = Dtk::Gui::DGuiApplicationHelper;
 #endif
-}
 
 } // namespace
 
@@ -58,7 +50,8 @@ int main(int argc, char *argv[])
     QCommandLineOption serviceOpt(QStringLiteral("service"),
                                   QStringLiteral("启动时自动打开的服务名"),
                                   QStringLiteral("dest"));
-    QCommandLineOption darkOpt(QStringLiteral("dark"), QStringLiteral("以深色主题启动"));
+    QCommandLineOption darkOpt(QStringLiteral("dark"), QStringLiteral("切到深色主题（走 DTK）"));
+    QCommandLineOption lightOpt(QStringLiteral("light"), QStringLiteral("切到浅色主题（走 DTK）"));
     QCommandLineOption demoOpt(QStringLiteral("demo"),
                                QStringLiteral("自检：自动监听 + 打开服务 + 加一条监听"));
     QCommandLineOption demoSeedOpt(QStringLiteral("demo-seed"),
@@ -95,6 +88,7 @@ int main(int argc, char *argv[])
     parser.addOption(busOpt);
     parser.addOption(serviceOpt);
     parser.addOption(darkOpt);
+    parser.addOption(lightOpt);
     parser.addOption(demoOpt);
     parser.addOption(demoSeedOpt);
     parser.addOption(demoMethodOpt);
@@ -112,9 +106,21 @@ int main(int argc, char *argv[])
     Theme theme;
     if (parser.isSet(darkOpt))
         theme.setDark(true);
-    // 应用启动时先让 DTK 的控件主题和 Sonde 自己的主题一致
-    applyDtkTheme(theme);
-    QObject::connect(&theme, &Theme::changed, &app, [&theme] { applyDtkTheme(theme); });
+
+    // 主题以 DTK 为准：标题栏里的 ThemeMenu 会调 setPaletteType，
+    // Sonde 自己的配色（树、表格、消息流）跟随它。
+#ifdef SONDE_WITH_DTK
+    if (parser.isSet(darkOpt))
+        DtkHelper::instance()->setPaletteType(DtkHelper::DarkType);
+    if (parser.isSet(lightOpt))
+        DtkHelper::instance()->setPaletteType(DtkHelper::LightType);
+    auto syncFromDtk = [&theme](DtkHelper::ColorType t) {
+        theme.setDark(t == DtkHelper::DarkType);
+    };
+    syncFromDtk(DtkHelper::instance()->paletteType());
+    QObject::connect(DtkHelper::instance(), &DtkHelper::paletteTypeChanged, &theme,
+                     syncFromDtk);
+#endif
 
     // 故意不 delete：监控线程把 Bridge 当作回调上下文，
     // 让它活到进程结束，避免退出瞬间出现悬垂指针。

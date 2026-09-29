@@ -14,19 +14,18 @@
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────┐
-│  Sonde   D-Bus 观察台 │ 总线 [session▾] │ [停止监听] │ 搜索…… │ [☾ 深色] │
+│  Sonde — D-Bus 观察台   总线 [session▾]  监听中 · 59          ☰(主题/关于) │ ← DTK 标题栏
 ├──────────────┬────────────────────────────────────┬─────────────────────┤
 │ 服务         │ 对象树                              │ 详情                │
-│              │                                     │                     │
+│ [搜索服务名] │                                     │                     │
 │ :1.1    唯一 │ ▾ PATH /                            │ METHOD  ReleaseName │
 │ :1.102  唯一 │   ▾ IFACE org.freedesktop.DBus      │ / · org.… . Release │
 │ org.foo 已知 │     ▸ METHOD Hello        () → (s)  │ 参数（s）           │
 │ …      ⟳     │     ▸ METHOD ReleaseName  (s) → (u) │ [0] [___________]   │
 │              │     ▸ METHOD ListNames    () → (as) │ [发送调用]          │
 │              │     ▸ SIGNAL NameAcquired (s)       │                     │
-│              │                                     │                     │
 ├──────────────┴────────────────────────────────────┴─────────────────────┤
-│ ▾ 监听 (1 项)  [只看监听列表] [暂停] [清空消息]      匹配 55 收到 1304 显示 55│
+│ ▾ 监听 (1 项) [开始/停止监听] [只看监听列表] [暂停] [清空消息]  匹配/收到/显示│
 │ ┌────────────────────────┬─────────────────────────────────────────────┐ │
 │ │ 监听列表               │ 实时消息流                                   │ │
 │ │ [SVC] org.freedesktop… │ 17:05:00 CALL org.freedesktop.DBus GetNameOwner│ │
@@ -67,10 +66,15 @@ D-Bus 的 `struct` → JSON 数组、`dict` → JSON 对象，所以 `a{sv}` / `
 
 左侧服务列表：已知服务排在前面，`:1.x` 这类唯一名排到最后。
 
-**控件用 DTK（Deepin Tool Kit）原生样式**：构建时如果找到 `dtk6gui` 就自动链接，
-按钮、下拉框、输入框、开关、复选框都用 DTK 的观感；控件的深浅色交给
-`DGuiApplicationHelper::setPaletteType()` 跟随 Sonde 的深浅色开关。
-没装 DTK 也能构建，会回退到 Qt 默认样式。
+**控件与窗口用 DTK（Deepin Tool Kit）原生样式**：窗口是 `D.ApplicationWindow`，
+标题栏是 `D.TitleBar`——总线选择就放在标题栏左侧，主题切换用它**内置的菜单**
+（浅色 / 深色 / 跟随系统，`ThemeMenu`），所以 Sonde 不再自己做主题按钮。
+按钮、下拉框、输入框、开关、复选框都是 DTK 观感；Sonde 自绘的部分
+（对象树、表格、消息流）通过监听 `DGuiApplicationHelper::paletteTypeChanged`
+跟随 DTK 的深浅色，两边不会脱节。
+
+构建时 `pkg-config` 找到 `dtk6gui` 就自动链接；没装 DTK 也能构建，会回退到 Qt 默认样式
+（此时标题栏用回 Qt 的 ToolBar，主题开关只能用命令行的 `--dark` / `--light`）。
 
 各面板标题栏上的按钮：
 
@@ -259,7 +263,8 @@ dbus-monitor: unable to enable new-style monitoring:
 ```
 --bus session|system    要监听的总线（默认 session）
 --service <dest>        启动时自动打开的服务
---dark                  以深色主题启动
+--dark                  切到深色主题（走 DTK 的 setPaletteType）
+--light                 切到浅色主题（走 DTK 的 setPaletteType）
 --demo                  自检：监听 + 打开服务 + 加一条监听 + 选个方法/属性真跑一次
 --demo-method <name>    自检时优先选中的方法或属性名
 --demo-seed <value>     自检时给第一个字符串参数填的值

@@ -1,9 +1,9 @@
 import QtQuick
 import QtQuick.Controls
-import org.deepin.dtk 1.0 as D
 import QtQuick.Layouts
+import org.deepin.dtk 1.0 as D
 
-ApplicationWindow {
+D.ApplicationWindow {
     id: root
 
     visible: true
@@ -15,19 +15,25 @@ ApplicationWindow {
     color: theme.bg
 
     // 共享状态
+    property string busName: "session"
     property var selectedNode: null
-    property string activeBus: busBox.currentText
+
+    onBusNameChanged: {
+        if (tree.service !== "")
+            tree.setService(root.busName, tree.service)
+    }
 
     Component.onCompleted: {
         if (typeof initialBus !== "undefined" && initialBus !== "")
-            busBox.currentIndex = (initialBus === "system" ? 1 : 0)
+            root.busName = initialBus
         if (typeof initialService !== "undefined" && initialService !== "")
-            tree.setService(root.activeBus, initialService)
+            tree.setService(root.busName, initialService)
+
         if (typeof demoMode !== "undefined" && demoMode) {
             watchPane.expanded = true
-            bridge.startMonitor(root.activeBus)
-            bridge.addWatch("service", root.activeBus, "org.freedesktop.DBus", "", "", "")
-            // 自检：找到一个"带一个字符串参数"的方法，填值真发一次
+            bridge.startMonitor(root.busName)
+            bridge.addWatch("service", root.busName, "org.freedesktop.DBus", "", "", "")
+
             function pickNode() {
                 var rows = tree.rows
                 var want = (typeof demoMethod !== "undefined") ? demoMethod : ""
@@ -47,7 +53,6 @@ ApplicationWindow {
 
             var picked = pickNode()
             if (picked === null) {
-                // 接口还没展开：展开第一个（注意别 toggle 已经展开的，否则就收起来了）
                 var rows0 = tree.rows
                 for (var i = 0; i < rows0.length; ++i) {
                     if (rows0[i].kind === "interface" && !rows0[i].expanded) {
@@ -71,72 +76,47 @@ ApplicationWindow {
         }
     }
 
-    // ---------------------------------------------------------------- 顶部工具栏
-    header: ToolBar {
-        background: Rectangle {
-            color: theme.surface
-            Rectangle {
-                anchors.bottom: parent.bottom
-                width: parent.width
-                height: 1
-                color: theme.border
-            }
-        }
+    // ---------------------------------------------------------------- DTK 标题栏
+    // 主题切换由 DTK 标题栏的 ThemeMenu 内置（浅色/深色/跟随系统），
+    // 不再需要自己做一个按钮。
+    header: D.TitleBar {
+        title: root.title
 
-        RowLayout {
-            anchors.fill: parent
-            anchors.leftMargin: 12
-            anchors.rightMargin: 12
-            spacing: 10
+        // 标题栏左侧自定义区：总线选择
+        // （注意不能用 content——那个槽默认就是标题组件，占掉就没标题了）
+        leftContent: Component {
+            RowLayout {
+                spacing: 8
 
-            Label {
-                text: "Sonde"
-                color: theme.accent
-                font.bold: true
-                font.pixelSize: 17
-            }
-            Label {
-                text: "D-Bus 观察台"
-                color: theme.textFaint
-                font.pixelSize: 12
-                Layout.rightMargin: 6
-            }
-
-            Rectangle {
-                Layout.preferredWidth: 1
-                Layout.fillHeight: true
-                Layout.topMargin: 8
-                Layout.bottomMargin: 8
-                color: theme.border
-            }
-
-            Label { text: "总线"; color: theme.textDim; font.pixelSize: 12 }
-            D.ComboBox {
-                id: busBox
-                model: ["session", "system"]
-                Layout.preferredWidth: 116
-                onActivated: {
-                    if (tree.service !== "")
-                        tree.setService(currentText, tree.service)
+                Label {
+                    text: "总线"
+                    color: theme.textDim
+                    font.pixelSize: 12
+                }
+                D.ComboBox {
+                    model: ["session", "system"]
+                    currentIndex: root.busName === "system" ? 1 : 0
+                    implicitWidth: 122
+                    onActivated: root.busName = currentText
+                }
+                Label {
+                    visible: bridge.monitoring
+                    text: "监听中 · " + bridge.total
+                    color: theme.ok
+                    font.pixelSize: 11
+                }
+                Label {
+                    visible: !bridge.monitoring && tree.service !== ""
+                    text: tree.service
+                    color: theme.textDim
+                    font.family: "monospace"
+                    font.pixelSize: 11
                 }
             }
-
-            Item { Layout.fillWidth: true }
-
-            Label {
-                visible: bridge.monitoring
-                text: bridge.monitoring
-                      ? ("监听中 · 收到 " + bridge.total + " 条" + (bridge.paused ? "（已暂停）" : ""))
-                      : ""
-                color: bridge.monitoring ? theme.ok : theme.textFaint
-                font.pixelSize: 11
-            }
-
-            D.Button {
-                text: theme.dark ? "☀  浅色" : "☾  深色"
-                onClicked: theme.dark = !theme.dark
-            }
         }
+
+        // 菜单不用自己给：DTK 标题栏默认就是
+        // ThemeMenu（浅色/深色/跟随系统）+ 帮助 + 关于 + 退出
     }
 
     // ---------------------------------------------------------------- 提示条
@@ -207,9 +187,9 @@ ApplicationWindow {
             ServicePane {
                 SplitView.preferredWidth: 288
                 SplitView.minimumWidth: 200
-                bus: root.activeBus
+                bus: root.busName
                 onServiceActivated: (dest) => {
-                    tree.setService(root.activeBus, dest)
+                    tree.setService(root.busName, dest)
                     root.selectedNode = null
                 }
             }
@@ -227,14 +207,14 @@ ApplicationWindow {
                 SplitView.preferredWidth: 460
                 SplitView.minimumWidth: 340
                 node: root.selectedNode
-                bus: root.activeBus
+                bus: root.busName
             }
         }
 
         WatchPane {
             id: watchPane
             Layout.fillWidth: true
-            bus: root.activeBus
+            bus: root.busName
         }
     }
 }
