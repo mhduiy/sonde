@@ -1,0 +1,4 @@
+build/
+rustcore/target/
+*.log
+*.png
