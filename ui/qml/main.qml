@@ -126,13 +126,14 @@ D.ApplicationWindow {
                     onActivated: root.busName = currentText
                 }
                 Label {
-                    visible: bridge.monitoring
+                    // 窄窗口时藏起来，否则会和标题栏居中的标题文字重叠
+                    visible: bridge.monitoring && root.width > 760
                     text: "监听中 · " + bridge.total
                     color: theme.ok
                     font.pixelSize: 11
                 }
                 Label {
-                    visible: !bridge.monitoring && tree.service !== ""
+                    visible: !bridge.monitoring && tree.service !== "" && root.width > 1000
                     text: tree.service
                     color: theme.textDim
                     font.family: "monospace"
@@ -212,7 +213,7 @@ D.ApplicationWindow {
 
             ServicePane {
                 SplitView.preferredWidth: 276
-                SplitView.minimumWidth: 180
+                SplitView.minimumWidth: 100
                 bus: root.busName
                 onServiceActivated: (dest) => {
                     tree.setService(root.busName, dest)
@@ -223,7 +224,7 @@ D.ApplicationWindow {
             TreePane {
                 id: treePane
                 SplitView.fillWidth: true
-                SplitView.minimumWidth: 300
+                SplitView.minimumWidth: 120
                 onNodeSelected: (row) => { root.selectedNode = row }
                 onReadPropertyRequested: (n) => detailPane.readProperty(n)
             }
@@ -231,7 +232,7 @@ D.ApplicationWindow {
             DetailPane {
                 id: detailPane
                 SplitView.preferredWidth: 440
-                SplitView.minimumWidth: 320
+                SplitView.minimumWidth: 200
                 node: root.selectedNode
                 bus: root.busName
             }

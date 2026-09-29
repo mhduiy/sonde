@@ -272,40 +272,51 @@ Rectangle {
                         }
                     }
 
-                    // 读取 + 轮询
-                    RowLayout {
+                    // 读取 + 轮询。用 Flow 而不是 RowLayout：
+                    // 面板窄的时候会自动换行，而不是溢出被裁掉。
+                    Flow {
                         Layout.fillWidth: true
                         spacing: 8
 
                         D.Button {
                             text: "读取当前值"
                             enabled: root.readable
+                            implicitHeight: 28
                             onClicked: root.readProperty(root.node)
                         }
-                        Label { text: "定时读取"; color: theme.textDim; font.pixelSize: 11 }
-                        D.ComboBox {
-                            implicitHeight: 28
-                            id: pollBox
-                            Layout.preferredWidth: 104
-                            model: ["关闭", "1 秒", "2 秒", "5 秒"]
-                            enabled: root.readable
-                            onActivated: {
-                                var ms = [0, 1000, 2000, 5000]
-                                root.pollMs = ms[currentIndex]
-                                if (root.pollMs > 0)
-                                    root.readProperty(root.node)
+                        Row {
+                            spacing: 6
+                            Label {
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: "定时读取"
+                                color: theme.textDim
+                                font.pixelSize: 11
+                            }
+                            D.ComboBox {
+                                id: pollBox
+                                width: 104
+                                implicitHeight: 28
+                                model: ["关闭", "1 秒", "2 秒", "5 秒"]
+                                enabled: root.readable
+                                onActivated: {
+                                    var ms = [0, 1000, 2000, 5000]
+                                    root.pollMs = ms[currentIndex]
+                                    if (root.pollMs > 0)
+                                        root.readProperty(root.node)
+                                }
                             }
                         }
                         D.ToolButton {
                             visible: root.propRows.length > 0
                             text: "复制值"
-                            implicitHeight: 22
+                            implicitWidth: 66
+                            implicitHeight: 28
                             onClicked: clip.put(JSON.stringify(root.propRows.length === 1
                                                                ? root.propRows[0].display
                                                                : root.propRows, null, 2))
                         }
-                        Item { Layout.fillWidth: true }
                         Label {
+                            anchors.verticalCenter: parent.verticalCenter
                             visible: root.propReadAt !== ""
                             text: "读取于 " + root.propReadAt
                                   + (root.pollMs > 0 ? "（轮询中）" : "")

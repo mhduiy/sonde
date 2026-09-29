@@ -41,8 +41,10 @@ Item {
     Flickable {
         id: flick
         anchors.fill: parent
+        // 固定预留滚动条的位置：不能按 vbar.size 动态算，
+        // 那样 vbar.size ← flick.height ← bottomMargin ← vbar.size 会成环
         anchors.rightMargin: root.barThickness
-        anchors.bottomMargin: vbar.size < 1 ? root.barThickness : 0
+        anchors.bottomMargin: root.barThickness
         contentWidth: Math.max(width, content.implicitWidth)
         contentHeight: Math.max(height, content.implicitHeight)
         clip: true
@@ -113,7 +115,7 @@ Item {
         anchors.right: parent.right
         anchors.top: parent.top
         anchors.bottom: parent.bottom
-        anchors.bottomMargin: hbar.size < 1 ? root.barThickness : 0
+        anchors.bottomMargin: root.barThickness
         size: Math.min(1, flick.height / Math.max(1, flick.contentHeight))
         position: flick.contentY / Math.max(1, flick.contentHeight)
         onPositionChanged: flick.contentY = position * flick.contentHeight

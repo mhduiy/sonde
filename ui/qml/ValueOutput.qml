@@ -210,13 +210,13 @@ ColumnLayout {
     }
 
     // ------------------------------------------------------------ 页签栏
-    RowLayout {
+    // Flow 而不是 RowLayout：面板窄的时候自动换行，不会溢出被裁
+    Flow {
         Layout.fillWidth: true
         spacing: 8
 
         TabBar {
             id: tabs
-            Layout.alignment: Qt.AlignVCenter
             currentIndex: root.activeIndex
             // 不用 TabBar 的信号（Controls 的 TabBar 没有 activated），
             // 让每个 TabButton 自己响应点击——clicked 只在用户点击时触发，
@@ -247,8 +247,6 @@ ColumnLayout {
                 onClicked: root.tab = "text"
             }
         }
-
-        Item { Layout.fillWidth: true }
 
         Label {
             visible: root.activeTab === "image" && root.width > 380

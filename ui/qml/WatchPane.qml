@@ -65,40 +65,22 @@ Rectangle {
                                : bridge.startMonitor(root.bus)
                 }
 
-                Rectangle {
-                    Layout.preferredWidth: 1
-                    Layout.fillHeight: true
-                    Layout.topMargin: 9
-                    Layout.bottomMargin: 9
-                    color: theme.border
-                }
-
+                // 折叠时高度只有 36px，塞不下所有控件，会横向溢出被裁。
+                // 次要的收进 ⋯ 菜单；"只看监听列表"开关在窄的时候也藏起来，
+                // 菜单里有等价项。
                 D.Switch {
                     implicitHeight: 26
+                    visible: root.width > 820
                     text: "只看监听列表"
                     checked: bridge.onlyWatched
                     onToggled: bridge.onlyWatched = checked
                     font.pixelSize: 11
                 }
 
-                D.Button {
-                    text: bridge.paused
-                          ? ("继续" + (bridge.pending > 0 ? " (+" + bridge.pending + ")" : ""))
-                          : "暂停"
-                    enabled: bridge.monitoring
-                    implicitHeight: 24
-                    onClicked: bridge.paused = !bridge.paused
-                }
-                D.Button {
-                    text: "清空消息"
-                    implicitHeight: 24
-                    onClicked: bridge.clear()
-                }
-
                 Item { Layout.fillWidth: true }
 
                 Label {
-                    visible: root.expanded
+                    visible: root.expanded && root.width > 760
                     text: "匹配 " + bridge.matched + "   收到 " + bridge.total
                           + "   显示 " + msgFilter.count
                     color: theme.textFaint
@@ -110,6 +92,40 @@ Rectangle {
                     text: "未监听"
                     color: theme.warn
                     font.pixelSize: 11
+                }
+
+                D.ToolButton {
+                    text: "⋯"
+                    implicitWidth: 28
+                    implicitHeight: 24
+                    onClicked: watchMenu.popup()
+                    ToolTip.visible: hovered
+                    ToolTip.text: "更多"
+                }
+            }
+
+            Menu {
+                id: watchMenu
+                MenuItem {
+                    text: "只看监听列表"
+                    checkable: true
+                    checked: bridge.onlyWatched
+                    onTriggered: bridge.onlyWatched = !bridge.onlyWatched
+                }
+                MenuItem {
+                    text: bridge.paused ? "继续接收" : "暂停接收"
+                    enabled: bridge.monitoring
+                    onTriggered: bridge.paused = !bridge.paused
+                }
+                MenuItem {
+                    text: "清空消息"
+                    onTriggered: bridge.clear()
+                }
+                MenuSeparator {}
+                MenuItem {
+                    text: "匹配 " + bridge.matched + "   收到 " + bridge.total
+                          + "   显示 " + msgFilter.count
+                    enabled: false
                 }
             }
 

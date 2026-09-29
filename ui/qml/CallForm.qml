@@ -316,12 +316,14 @@ ColumnLayout {
         spacing: 6
 
         Label {
+            Layout.fillWidth: true
+            Layout.minimumWidth: 0
+            elide: Text.ElideRight
             text: "参数" + (root.sig === "" ? "（无）" : "（" + root.sig + "）")
             color: theme.textDim
             font.bold: true
             font.pixelSize: 11
         }
-        Item { Layout.fillWidth: true }
         D.ToolButton {
             text: "复制参数"
             implicitHeight: 22
@@ -379,9 +381,19 @@ ColumnLayout {
                     }
                 }
 
-                Row {
-                    Repeater {
-                        model: tblock.info.cols
+                Flickable {
+                    Layout.fillWidth: true
+                    implicitHeight: 24
+                    contentWidth: Math.max(width, rowHeader.width)
+                    clip: true
+                    flickableDirection: Flickable.HorizontalFlick
+                    boundsBehavior: Flickable.StopAtBounds
+                    ScrollBar.horizontal: ScrollBar { policy: ScrollBar.AsNeeded }
+
+                    Row {
+                        id: rowHeader
+                        Repeater {
+                            model: tblock.info.cols
                         delegate: Rectangle {
                             required property int index
                             required property var modelData
@@ -414,6 +426,7 @@ ColumnLayout {
                             }
                         }
                     }
+                }
                 }
 
                 Repeater {
@@ -590,6 +603,9 @@ ColumnLayout {
             font.pixelSize: 12
         }
         Label {
+            Layout.fillWidth: true
+            Layout.minimumWidth: 0
+            elide: Text.ElideRight
             visible: root.result !== null && root.result.ok
             text: root.result
                   ? ("✓  返回签名: " + (root.result.signature === "" ? "（空）"
@@ -599,11 +615,11 @@ ColumnLayout {
             font.family: "monospace"
             font.pixelSize: 11
         }
-        Item { Layout.fillWidth: true }
         D.ToolButton {
             visible: root.result !== null && root.result.ok
             text: "复制返回"
-            implicitHeight: 22
+            implicitWidth: 70
+            implicitHeight: 26
             onClicked: clip.put(JSON.stringify(root.result, null, 2))
         }
     }
