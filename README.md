@@ -282,6 +282,20 @@ D.ApplicationWindow {
 正确做法：结构化视图（JSON 页签）用 `JSON.stringify(parsed, null, 4)` 重新格式化，
 只有"文本"页签才用原文。同一个数据，两个页签各取所需。
 
+### 8. 长 JSON 没有滚动条
+
+两个原因叠在一起：
+
+1. `ValueOutput` 的 `StackLayout` 上同时写了 `Layout.fillHeight: true` 和
+   `Layout.preferredHeight`。在 `DetailPane` 的外层 ScrollView 里，`fillHeight`
+   把它撑到了内容高度，内层 `ScrollView` 于是没有可滚区间。
+2. `ScrollView` 附着的 `ScrollBar` 在内容超宽（`NoWrap` 的代码行很长）时**位置不可靠**，
+   会跑到内容左边去。
+
+改法：`StackLayout` 只保留有界的 `preferredHeight`/`maximumHeight`；`CodeView`
+换成「`Flickable` + 自己摆的 `ScrollBar`」，位置、尺寸、常显都由自己控制
+（纵向常显，横向按需）。
+
 ---
 
 依赖：Qt 6.8（含 QuickControls2）、Rust 工具链、cmake + ninja。

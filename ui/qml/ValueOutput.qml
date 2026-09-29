@@ -265,8 +265,11 @@ ColumnLayout {
     // ------------------------------------------------------------ 内容
     StackLayout {
         Layout.fillWidth: true
-        Layout.fillHeight: true
+        // 不设 fillHeight：这是个有界高度的查看区，内部自己滚。
+        // 之前设了 fillHeight，在 DetailPane 的 ScrollView 里高度被拉到内容高度，
+        // 内层 ScrollView 就没有可滚区间了（表现就是"没有滚动条"）。
         Layout.preferredHeight: root.maxHeight
+        Layout.maximumHeight: root.maxHeight
         currentIndex: root.activeIndex
 
         // ---- 表格 ----
@@ -336,7 +339,7 @@ ColumnLayout {
                         model: root.table.rows
                         clip: true
                         reuseItems: true
-                        ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+                        ScrollBar.vertical: ScrollBar { policy: ScrollBar.AlwaysOn }
 
                         delegate: Row {
                             id: tableRow

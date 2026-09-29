@@ -133,8 +133,7 @@ ColumnLayout {
                 anchors.margins: 2
                 text: root.row.jsonPretty
             }
-        }
-    }
+        }    }
 
     // 只有真的是 JSON 的行才创建放大视图
     Loader {

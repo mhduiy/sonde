@@ -1,12 +1,15 @@
 import QtQuick
 import QtQuick.Controls
-import org.deepin.dtk 1.0 as D
 
 /// 代码查看器：行号 + 语法高亮 + 可选中复制 + 双向滚动。
 ///
 /// 高亮由 C++ 的 `bridge.jsonLines()` 生成（按行切好的 HTML）。
 /// 用 QtQuick 的 `TextEdit` 而不是 Controls 的 `TextArea`——后者没有暴露
 /// `lineHeight`，行号栏就没法跟正文严格对齐。
+///
+/// 滚动用「Flickable + 自己摆的 ScrollBar」而不是 ScrollView：
+/// ScrollView 的附着滚动条在内容超宽时位置不可靠（会跑到左边去），
+/// 自己摆位置和尺寸都确定。
 Item {
     id: root
 
@@ -33,13 +36,20 @@ Item {
     // TextEdit 的行高由字体决定（约 = height + leading），行号栏必须用同一个值
     readonly property int lineH: Math.ceil(fm.height + fm.leading)
 
-    ScrollView {
+    readonly property int barThickness: 11
+
+    Flickable {
+        id: flick
         anchors.fill: parent
+        anchors.rightMargin: root.barThickness
+        anchors.bottomMargin: vbar.size < 1 ? root.barThickness : 0
+        contentWidth: Math.max(width, content.implicitWidth)
+        contentHeight: Math.max(height, content.implicitHeight)
         clip: true
-        ScrollBar.horizontal: ScrollBar { policy: ScrollBar.AsNeeded }
-        ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+        boundsBehavior: Flickable.StopAtBounds
 
         Column {
+            id: content
             topPadding: 6
             bottomPadding: 10
 
@@ -78,7 +88,7 @@ Item {
                 TextEdit {
                     id: code
                     width: root.wrap
-                           ? Math.max(200, root.width - root.gutterWidth - 24)
+                           ? Math.max(200, flick.width - root.gutterWidth - 24)
                            : implicitWidth
                     textFormat: TextEdit.RichText
                     text: root.html
@@ -89,10 +99,37 @@ Item {
                     color: theme.text
                     font.family: "monospace"
                     font.pixelSize: 12
-                    // TextEdit 没有 lineHeight，行高只能由字体决定；
-                    // 行号栏用同一字体度量算出来的高度与之对齐。
                 }
             }
         }
+    }
+
+    // 纵向：常显，内容长了必须一眼看出能滚
+    ScrollBar {
+        id: vbar
+        orientation: Qt.Vertical
+        policy: ScrollBar.AlwaysOn
+        active: true
+        anchors.right: parent.right
+        anchors.top: parent.top
+        anchors.bottom: parent.bottom
+        anchors.bottomMargin: hbar.size < 1 ? root.barThickness : 0
+        size: Math.min(1, flick.height / Math.max(1, flick.contentHeight))
+        position: flick.contentY / Math.max(1, flick.contentHeight)
+        onPositionChanged: flick.contentY = position * flick.contentHeight
+    }
+
+    ScrollBar {
+        id: hbar
+        orientation: Qt.Horizontal
+        policy: ScrollBar.AsNeeded
+        active: true
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.rightMargin: root.barThickness
+        anchors.bottom: parent.bottom
+        size: Math.min(1, flick.width / Math.max(1, flick.contentWidth))
+        position: flick.contentX / Math.max(1, flick.contentWidth)
+        onPositionChanged: flick.contentX = position * flick.contentWidth
     }
 }
