@@ -12,11 +12,28 @@ D.ApplicationWindow {
     minimumWidth: 1000
     minimumHeight: 640
     title: "Sonde — D-Bus 观察台"
-    color: theme.bg
+
+    // ---- DTK 窗口（参照 dde-control-center 的 DccWindow.qml）----
+    // D.DWindow.enabled 是关键：它告诉 DDE 这个窗口自己画标题栏，
+    // 否则 DDE 的窗口框架会和下面的 D.TitleBar 各画一条 → 双标题栏。
+    D.DWindow.enabled: true
+    flags: Qt.Window | Qt.WindowCloseButtonHint | Qt.WindowTitleHint
+           | Qt.WindowMinimizeButtonHint | Qt.WindowMaximizeButtonHint
+    // 背景交给 DTK 画（圆角 + 阴影），所以窗口本身透明
+    color: "transparent"
 
     // 共享状态
     property string busName: "session"
     property var selectedNode: null
+
+    // 窗口背景：DTK 的模糊/底色层，负责圆角与阴影区域
+    D.StyledBehindWindowBlur {
+        anchors.fill: parent
+        control: root
+        blendColor: (D.DTK.themeType === D.ApplicationHelper.DarkType)
+                    ? Qt.rgba(0.06, 0.06, 0.06, 0.85)
+                    : Qt.rgba(1, 1, 1, 0.85)
+    }
 
     onBusNameChanged: {
         if (tree.service !== "")
@@ -80,7 +97,14 @@ D.ApplicationWindow {
     // 主题切换由 DTK 标题栏的 ThemeMenu 内置（浅色/深色/跟随系统），
     // 不再需要自己做一个按钮。
     header: D.TitleBar {
+        id: titleBar
         title: root.title
+        implicitHeight: 40
+        // embedMode 默认为 !DWindow.enabled，这里显式写出来：
+        // false 表示"标题栏自己画窗口按钮"，不再依赖窗口管理器
+        embedMode: false
+        autoHideOnFullscreen: true
+        focus: true
 
         // 标题栏左侧自定义区：总线选择
         // （注意不能用 content——那个槽默认就是标题组件，占掉就没标题了）
@@ -88,6 +112,13 @@ D.ApplicationWindow {
             RowLayout {
                 spacing: 8
 
+                Label {
+                    text: "Sonde"
+                    color: theme.accent
+                    font.bold: true
+                    font.pixelSize: 14
+                    Layout.leftMargin: 6
+                }
                 Label {
                     text: "总线"
                     color: theme.textDim

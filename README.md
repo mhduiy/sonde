@@ -247,6 +247,30 @@ dbus-monitor: unable to enable new-style monitoring:
 两处都改掉：**未加载的 path 节点乐观地认为可展开**（先给箭头），
 双击/点箭头只排除 `arg` 节点，不再看 `hasChildren`。
 
+### 6. 双标题栏：`D.DWindow.enabled` 才是那条开关
+
+用 `D.ApplicationWindow` + `header: D.TitleBar` 之后，实机上出现了**两条标题栏**——
+DDE 的窗口框架画一条，DTK 的 TitleBar 又画一条。
+
+原因是我只换了窗口类型，没告诉窗口管理器"这个窗口自己画标题栏"。
+参照 `dde-control-center` 的 `src/dde-control-center/plugin/DccWindow.qml`，
+它有这么几项是必需的：
+
+```qml
+D.ApplicationWindow {
+    D.DWindow.enabled: true          // ← 关键：让 DDE 不再画自己的标题栏
+    flags: Qt.Window | Qt.WindowCloseButtonHint | Qt.WindowTitleHint
+           | Qt.WindowMinimizeButtonHint | Qt.WindowMaximizeButtonHint
+    color: "transparent"             // 背景（圆角/阴影）交给 DTK 画
+    D.StyledBehindWindowBlur { anchors.fill: parent; control: root }
+    D.TitleBar { embedMode: false; autoHideOnFullscreen: true; focus: true }
+}
+```
+
+`D.DWindow.enabled: true` 会让 DTK 去给窗口设置 "NoTitlebar"。离屏渲染没有窗口管理器时
+会打印 `Failed to enable NoTitlebar for the window`——**这条日志本身就是机制生效的证据**，
+实机上会设置成功，于是只剩 DTK 那一条标题栏。
+
 ---
 
 ## 构建与运行
