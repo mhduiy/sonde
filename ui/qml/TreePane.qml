@@ -17,6 +17,29 @@ Rectangle {
 
     color: theme.surface
 
+    /// 上次滚动到的 focus 节点，避免用户手动展开时被反复拽走
+    property string lastFocus: ""
+
+    function scrollToFocus() {
+        var rows = tree.rows
+        for (var i = 0; i < rows.length; ++i) {
+            if (rows[i].id === tree.focusId) {
+                list.positionViewAtIndex(i, ListView.BeginVisible)
+                return
+            }
+        }
+    }
+
+    Connections {
+        target: tree
+        function onRowsChanged() {
+            if (tree.focusId !== "" && tree.focusId !== root.lastFocus) {
+                root.lastFocus = tree.focusId
+                Qt.callLater(root.scrollToFocus)
+            }
+        }
+    }
+
     function activate(n) {
         root.selectedId = n.id !== undefined ? n.id : ""
         root.nodeSelected(n)
@@ -72,6 +95,22 @@ Rectangle {
 
                 Item { Layout.fillWidth: true }
 
+                ToolButton {
+                    text: "定位"
+                    implicitHeight: 24
+                    enabled: tree.service !== ""
+                    onClicked: tree.locateService()
+                    ToolTip.visible: hovered
+                    ToolTip.text: "跳到与服务名对应的对象路径（例如 org.deepin.dde.Timedate1 → /org/deepin/dde/Timedate1）"
+                }
+                CheckBox {
+                    text: "精简"
+                    checked: tree.hideStandard
+                    onToggled: tree.hideStandard = checked
+                    font.pixelSize: 11
+                    ToolTip.visible: hovered
+                    ToolTip.text: "隐藏 org.freedesktop.DBus.* 标准接口，只留下服务自己的接口"
+                }
                 ToolButton {
                     text: "展开"
                     implicitHeight: 24

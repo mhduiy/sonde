@@ -72,12 +72,15 @@ int main(int argc, char *argv[])
     QCommandLineOption delayOpt(QStringLiteral("screenshot-delay"),
                                 QStringLiteral("截图前的等待毫秒数"),
                                 QStringLiteral("ms"), QStringLiteral("1800"));
+    QCommandLineOption dumpOpt(QStringLiteral("dump-tree"),
+                               QStringLiteral("打印对象树的行（id/kind/name/depth）后退出，调试用"));
     parser.addOption(busOpt);
     parser.addOption(serviceOpt);
     parser.addOption(darkOpt);
     parser.addOption(demoOpt);
     parser.addOption(shotOpt);
     parser.addOption(delayOpt);
+    parser.addOption(dumpOpt);
     parser.process(app);
 
     Theme theme;
@@ -105,6 +108,23 @@ int main(int argc, char *argv[])
     if (engine.rootObjects().isEmpty()) {
         qCritical() << "QML 加载失败，检查目录:" << QStringLiteral(SONDE_QML_DIR);
         return 2;
+    }
+
+    if (parser.isSet(dumpOpt)) {
+        QTimer::singleShot(1500, &app, [tree] {
+            const QVariantList rows = tree->rows();
+            qInfo().noquote() << "focusId =" << tree->focusId();
+            for (const QVariant &v : rows) {
+                const QVariantMap m = v.toMap();
+                qInfo().noquote() << QString(m.value(QStringLiteral("depth")).toInt() * 2,
+                                             QLatin1Char(' '))
+                                         << m.value(QStringLiteral("kind")).toString()
+                                         << m.value(QStringLiteral("id")).toString()
+                                         << QStringLiteral("|")
+                                         << m.value(QStringLiteral("name")).toString();
+            }
+            QGuiApplication::quit();
+        });
     }
 
     if (parser.isSet(shotOpt)) {

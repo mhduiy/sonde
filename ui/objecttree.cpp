@@ -41,6 +41,115 @@ QString ObjectTree::joinPath(const QString &base, const QString &child)
     return base + QLatin1Char('/') + child;
 }
 
+/// 服务名 → 约定的对象路径：org.deepin.dde.Timedate1 → /org/deepin/dde/Timedate1
+QString ObjectTree::pathForDest(const QString &dest)
+{
+    if (dest.isEmpty() || dest.startsWith(QLatin1Char(':')))
+        return QString(); // 唯一名没有对应的对象路径
+    QString p = dest;
+    p.replace(QLatin1Char('.'), QLatin1Char('/'));
+    return QLatin1Char('/') + p;
+}
+
+/// org.freedesktop.DBus 本身是总线主接口，不算标准噪音；
+/// org.freedesktop.DBus.Properties / Introspectable / Peer / Monitoring / Debug.Stats 才是。
+bool ObjectTree::isStandardIface(const QString &name)
+{
+    return name.startsWith(QLatin1String("org.freedesktop.DBus."));
+}
+
+void ObjectTree::setHideStandard(bool v)
+{
+    if (m_hideStandard == v)
+        return;
+    m_hideStandard = v;
+    emit hideStandardChanged();
+    buildRows();
+}
+
+bool ObjectTree::visible(const Node *n) const
+{
+    if (!n)
+        return false;
+    if (m_hideStandard && n->standard)
+        return false;
+    return true;
+}
+
+void ObjectTree::genericExpand()
+{
+    // 兜底：服务名对不上任何对象路径时，展开根下最多 2 个路径子节点
+    Node *root = node(nodeId(QStringLiteral("/")));
+    if (!root)
+        return;
+    int expandedPaths = 0;
+    for (const QString &cid : std::as_const(root->children)) {
+        Node *c = node(cid);
+        if (c && c->kind == QLatin1String("path") && expandedPaths < 2) {
+            autoExpandChain(c, 0);
+            ++expandedPaths;
+        }
+    }
+}
+
+/// 沿 target 路径逐级展开，返回实际到达的最深节点 id
+QString ObjectTree::expandPath(const QString &target)
+{
+    Node *n = node(nodeId(QStringLiteral("/")));
+    if (!n)
+        return QString();
+    n->expanded = true;
+    QString reached = n->id;
+    QString cur = QStringLiteral("/");
+
+    const QStringList segs = target.split(QLatin1Char('/'), Qt::SkipEmptyParts);
+    for (const QString &seg : segs) {
+        if (!n->loaded)
+            load(n->id);
+        cur = joinPath(cur, seg);
+        Node *child = node(nodeId(cur));
+        if (!child)
+            break; // 路径对不上就停在能到达的那一级
+        child->expanded = true;
+        reached = child->id;
+        n = child;
+    }
+
+    // 关键：把到达的节点也加载出来，否则"已展开"却没有子节点可显示，
+    // locateService 也找不到它下面的接口。
+    if (!n->loaded)
+        load(n->id);
+    return reached;
+}
+
+void ObjectTree::locateService()
+{
+    m_focusId.clear();
+    const QString target = pathForDest(m_dest);
+
+    if (!target.isEmpty()) {
+        const QString reached = expandPath(target);
+        if (reached != nodeId(QStringLiteral("/"))) {
+            m_focusId = reached;
+
+            // 再把"这个对象自己的接口"展开（跳过标准接口），让方法直接可见，
+            // 否则用户还要多点一次才看得到方法。
+            Node *n = node(reached);
+            if (n) {
+                for (const QString &cid : std::as_const(n->children)) {
+                    Node *c = node(cid);
+                    if (c && c->kind == QLatin1String("interface") && !c->standard) {
+                        c->expanded = true;
+                        break;
+                    }
+                }
+            }
+            return;
+        }
+    }
+    genericExpand();
+}
+
 void ObjectTree::setFilter(const QString &f)
 {
     if (m_filter == f)
@@ -92,16 +201,8 @@ void ObjectTree::createRoot()
     m_roots.append(root->id);
     load(root->id);
 
-    // 对根节点下最多 2 个路径子节点做单链自动展开，
-    // 这样一进来就能看到有内容的层级，而不是一串待点击的目录。
-    int expandedPaths = 0;
-    for (const QString &cid : std::as_const(root->children)) {
-        Node *c = node(cid);
-        if (c && c->kind == QLatin1String("path") && expandedPaths < 2) {
-            autoExpandChain(c, 0);
-            ++expandedPaths;
-        }
-    }
+    // 直接定位到"与服务名对应的对象路径"，省掉在几十个兄弟节点里翻找
+    locateService();
 
     m_ready = true;
 }
@@ -225,6 +326,7 @@ void ObjectTree::loadPath(Node *n)
             iface->name = name;
             iface->iface = name;
             iface->path = n->path;
+            iface->standard = isStandardIface(name);
             iface->loaded = true;
             if (m_nodes.contains(iface->id)) {
                 delete iface;
@@ -308,7 +410,7 @@ void ObjectTree::buildRows()
 
 bool ObjectTree::collect(const Node *n, int depth, QVariantList &out) const
 {
-    if (!n)
+    if (!n || !visible(n))
         return false;
 
     const bool filtering = !m_filter.isEmpty();
