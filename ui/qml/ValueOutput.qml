@@ -148,17 +148,10 @@ ColumnLayout {
                          : (tableable ? "table" : (parsed !== null ? "json" : "text")))
     /// 值是不是一张能显示的图片（file:// URI 或绝对路径 + 图片扩展名）。
     /// 只处理本地文件——远程 URL 不主动去抓（慢且可能失败）。
-    readonly property string imageSource: {
-        var t = root.rawStringValue
-        if (t === "" && root.nodes.length === 1 && root.nodes[0]
-                && root.nodes[0].kind === "str")
-            t = "" + (root.nodes[0].text || "")
-        if (t === "")
+    function imageSourceOf(v) {
+        if (typeof v !== "string" || v === "")
             return ""
-        var s = t.trim()
-        if (s.length >= 2 && (s.charAt(0) === '"' || s.charAt(0) === "'")
-                || s.length >= 2 && s.charAt(s.length - 1) === '"')
-            s = s.replace(/^["']|["']$/g, "")
+        var s = v.trim().replace(/^["']|["']$/g, "")
         if (s.indexOf("file://") !== 0 && s.charAt(0) !== "/")
             return ""
         var lower = s.toLowerCase()
@@ -173,11 +166,20 @@ ColumnLayout {
         }
         if (!ok)
             return ""
-        // Image 只认 URL：裸绝对路径会被当成相对路径
+        // Image 只认 URL：裸绝对路径会被当成相对 QML 文件的路径
         if (s.charAt(0) === "/")
             s = "file://" + s
         return s
     }
+
+    readonly property string imageSource: {
+        var t = root.rawStringValue
+        if (t === "" && root.nodes.length === 1 && root.nodes[0]
+                && root.nodes[0].kind === "str")
+            t = "" + (root.nodes[0].text || "")
+        return root.imageSourceOf(t)
+    }
+
     readonly property bool hasImage: root.imageSource !== ""
 
     readonly property var tabNames: ["image", "table", "json", "text"]
@@ -459,16 +461,44 @@ ColumnLayout {
                                         height: parent.height + 1
                                         color: theme.border
                                     }
-                                    Label {
+                                    Row {
+                                        id: cellRow
                                         anchors.fill: parent
                                         anchors.leftMargin: 6
                                         anchors.rightMargin: 4
-                                        verticalAlignment: Text.AlignVCenter
-                                        text: root.cellText(tableRow.modelData[modelData])
-                                        color: theme.text
-                                        font.family: "monospace"
-                                        font.pixelSize: 11
-                                        elide: Text.ElideRight
+                                        spacing: 6
+
+                                        readonly property string img:
+                                            root.imageSourceOf(tableRow.modelData[modelData])
+                                        readonly property bool showThumb:
+                                            img !== "" && root.colWidths[index] >= 80
+
+                                        // 缩略图：务必限制 sourceSize，
+                                        // 否则每行都按原始分辨率解码（壁纸动辄几千万像素）
+                                        Image {
+                                            width: cellRow.showThumb ? 30 : 0
+                                            height: 20
+                                            y: (cellRow.height - height) / 2
+                                            visible: cellRow.showThumb
+                                            source: cellRow.showThumb ? cellRow.img : ""
+                                            sourceSize.width: 30
+                                            sourceSize.height: 20
+                                            fillMode: Image.PreserveAspectCrop
+                                            asynchronous: true
+                                            cache: true
+                                        }
+
+                                        Label {
+                                            width: Math.max(0, cellRow.width - x
+                                                               - (cellRow.showThumb ? 36 : 0))
+                                            height: cellRow.height
+                                            verticalAlignment: Text.AlignVCenter
+                                            text: root.cellText(tableRow.modelData[modelData])
+                                            color: theme.text
+                                            font.family: "monospace"
+                                            font.pixelSize: 11
+                                            elide: Text.ElideRight
+                                        }
                                     }
                                 }
                             }
