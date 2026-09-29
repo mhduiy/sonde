@@ -132,15 +132,29 @@ void ObjectTree::locateService()
         if (reached != nodeId(QStringLiteral("/"))) {
             m_focusId = reached;
 
-            // 再把"这个对象自己的接口"展开（跳过标准接口），让方法直接可见，
-            // 否则用户还要多点一次才看得到方法。
+            // 到达对象后决定展开什么：
+            // - 下面还有子路径（例如 /org/freedesktop/Accounts 底下是一堆
+            //   User1000 用户对象）→ 子对象才是主体，接口保持折叠，
+            //   否则接口的方法会把这堆子对象挤到看不见的地方
+            // - 没有子路径（叶子对象，例如 /org/deepin/dde/Timedate1）
+            //   → 展开它自己的接口，让方法直接可见
             Node *n = node(reached);
             if (n) {
+                bool hasChildPath = false;
                 for (const QString &cid : std::as_const(n->children)) {
-                    Node *c = node(cid);
-                    if (c && c->kind == QLatin1String("interface") && !c->standard) {
-                        c->expanded = true;
+                    const Node *c = node(cid);
+                    if (c && c->kind == QLatin1String("path")) {
+                        hasChildPath = true;
                         break;
+                    }
+                }
+                if (!hasChildPath) {
+                    for (const QString &cid : std::as_const(n->children)) {
+                        Node *c = node(cid);
+                        if (c && c->kind == QLatin1String("interface") && !c->standard) {
+                            c->expanded = true;
+                            break;
+                        }
                     }
                 }
             }

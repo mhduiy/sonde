@@ -10,7 +10,11 @@ ColumnLayout {
     id: root
 
     required property var row
-    property bool expandJson: false
+    property bool expandJson: typeof jsonExpanded !== "undefined" ? jsonExpanded : false
+
+    readonly property int lineCount:
+        (root.row.json === true && root.row.jsonPretty)
+        ? ("" + root.row.jsonPretty).split("\n").length : 0
 
     Layout.fillWidth: true
     spacing: 2
@@ -86,53 +90,63 @@ ColumnLayout {
         }
     }
 
-    // 展开的 JSON 块：可以直接选中复制，也自带复制按钮
-    Rectangle {
+    // 展开的 JSON 块：行号 + 高亮 + 可滚动可选中，还能放大到全屏看
+    ColumnLayout {
         Layout.fillWidth: true
         Layout.leftMargin: 14 + root.row.depth * 14
         visible: root.row.json === true && root.expandJson
-        implicitHeight: jsonText.implicitHeight + jsonBar.implicitHeight + 10
-        color: theme.bg
-        border.color: theme.border
-        radius: 3
+        spacing: 4
 
-        ColumnLayout {
-            anchors.fill: parent
-            anchors.margins: 5
-            spacing: 3
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: 6
 
-            RowLayout {
-                id: jsonBar
-                Layout.fillWidth: true
-                spacing: 6
-                Label {
-                    text: "已识别为 JSON（"
-                          + (root.row.jsonPretty ? root.row.jsonPretty.split("\n").length : 0)
-                          + " 行）"
-                    color: theme.textFaint
-                    font.pixelSize: 10
-                }
-                Item { Layout.fillWidth: true }
-                ToolButton {
-                    text: "复制全部"
-                    implicitHeight: 20
-                    onClicked: clip.put(root.row.jsonPretty)
-                }
+            Label {
+                text: "已识别为 JSON（" + root.lineCount + " 行）"
+                color: theme.textFaint
+                font.pixelSize: 10
             }
-
-            TextArea {
-                id: jsonText
-                Layout.fillWidth: true
-                text: root.row.jsonPretty !== undefined ? ("" + root.row.jsonPretty) : ""
-                readOnly: true
-                selectByMouse: true
-                wrapMode: TextArea.NoWrap
-                font.family: "monospace"
-                font.pixelSize: 11
-                color: theme.text
-                background: null
-                implicitHeight: Math.min(320, contentHeight + 4)
+            Item { Layout.fillWidth: true }
+            ToolButton {
+                text: "放大查看"
+                implicitHeight: 20
+                onClicked: if (viewerLoader.item) viewerLoader.item.open()
             }
+            ToolButton {
+                text: "复制全部"
+                implicitHeight: 20
+                onClicked: clip.put(root.row.jsonPretty)
+            }
+        }
+
+        Rectangle {
+            Layout.fillWidth: true
+            implicitHeight: 260
+            color: theme.bg
+            border.color: theme.border
+            radius: 3
+            clip: true
+
+            CodeView {
+                anchors.fill: parent
+                anchors.margins: 2
+                text: root.row.jsonPretty
+            }
+        }
+    }
+
+    // 只有真的是 JSON 的行才创建放大视图
+    Loader {
+        id: viewerLoader
+        active: root.row.json === true
+        sourceComponent: jsonViewerComponent
+    }
+
+    Component {
+        id: jsonViewerComponent
+        JsonViewerPopup {
+            text: root.row.jsonPretty
+            title: "JSON — " + root.lineCount + " 行"
         }
     }
 

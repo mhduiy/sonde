@@ -751,6 +751,113 @@ QString Bridge::nodeToText(const QVariantMap &node, int indent) const
     return text;
 }
 
+QStringList Bridge::jsonLines(const QString &json, const QVariantMap &colors) const
+{
+    const QString cKey = colors.value(QStringLiteral("key")).toString();
+    const QString cStr = colors.value(QStringLiteral("str")).toString();
+    const QString cNum = colors.value(QStringLiteral("num")).toString();
+    const QString cBool = colors.value(QStringLiteral("bool")).toString();
+    const QString cPunct = colors.value(QStringLiteral("punct")).toString();
+
+    auto esc = [](QChar c) -> QString {
+        if (c == QLatin1Char('<'))
+            return QStringLiteral("&lt;");
+        if (c == QLatin1Char('>'))
+            return QStringLiteral("&gt;");
+        if (c == QLatin1Char('&'))
+            return QStringLiteral("&amp;");
+        // 空格用不换行空格，否则富文本会把缩进吃掉
+        if (c == QLatin1Char(' '))
+            return QStringLiteral("&nbsp;");
+        return QString(c);
+    };
+    auto span = [](const QString &color, const QString &body) {
+        return QStringLiteral("<span style=\"color:%1\">%2</span>").arg(color, body);
+    };
+    // 无分配的字面量比较（Qt6 没有了 midRef）
+    auto litAt = [&json](int pos, const char *lit) {
+        int k = 0;
+        while (lit[k] != '\0') {
+            if (pos + k >= json.size() || json.at(pos + k) != QLatin1Char(lit[k]))
+                return false;
+            ++k;
+        }
+        return true;
+    };
+
+    QString out;
+    out.reserve(json.size() * 2);
+    const int n = json.size();
+    int i = 0;
+    while (i < n) {
+        const QChar c = json.at(i);
+
+        if (c == QLatin1Char('"')) {
+            QString lit = QStringLiteral("&quot;");
+            int j = i + 1;
+            while (j < n) {
+                const QChar d = json.at(j);
+                if (d == QLatin1Char('\\') && j + 1 < n) {
+                    lit += esc(json.at(j + 1));
+                    j += 2;
+                    continue;
+                }
+                if (d == QLatin1Char('"')) {
+                    lit += QStringLiteral("&quot;");
+                    ++j;
+                    break;
+                }
+                lit += esc(d);
+                ++j;
+            }
+            // 后面跳过空白是不是冒号，决定这是 key 还是普通字符串
+            int k = j;
+            while (k < n && json.at(k).isSpace())
+                ++k;
+            const bool isKey = (k < n && json.at(k) == QLatin1Char(':'));
+            out += span(isKey ? cKey : cStr, lit);
+            i = j;
+            continue;
+        }
+
+        if (c == QLatin1Char('-') || c.isDigit()) {
+            int j = i;
+            while (j < n) {
+                const QChar d = json.at(j);
+                if (d.isDigit() || d == QLatin1Char('.') || d == QLatin1Char('-')
+                    || d == QLatin1Char('e') || d == QLatin1Char('E') || d == QLatin1Char('+'))
+                    ++j;
+                else
+                    break;
+            }
+            out += span(cNum, json.mid(i, j - i));
+            i = j;
+            continue;
+        }
+
+        if (litAt(i, "true") || litAt(i, "null")) {
+            out += span(cBool, json.mid(i, 4));
+            i += 4;
+            continue;
+        }
+        if (litAt(i, "false")) {
+            out += span(cBool, json.mid(i, 5));
+            i += 5;
+            continue;
+        }
+
+        if (c == QLatin1Char('\n')) {
+            out += QLatin1Char('\n');
+            ++i;
+            continue;
+        }
+        out += span(cPunct, esc(c));
+        ++i;
+    }
+
+    return out.split(QLatin1Char('\n'));
+}
+
 QString Bridge::messageToText(const QVariantMap &msg) const
 {
     QString out;

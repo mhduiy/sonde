@@ -48,9 +48,11 @@
    之后总线上任何匹配的消息都会实时出现在里面
 6. 底部消息**点一下**可以看它的完整解码内容，还能一键「监听这条消息的来源」
 
-**返回值里的 JSON 会被自动识别**：很多接口（例如
-`org.deepin.dde.Appearance1.List("icon")`）把 JSON 塞在字符串里返回。
-Sonde 认出来之后会打上 `JSON` 标记，可以一键「格式化」查看，也有「复制」按钮。
+**返回值里的 JSON 会被自动识别并当作代码查看**：很多接口（例如
+`org.deepin.dde.Appearance1.List("icon")` 返回 274 行）把 JSON 塞在字符串里返回。
+Sonde 认出来之后会打上 `JSON` 标记，展开就是**带行号和语法高亮的代码视图**——
+key / 字符串 / 数字 / 标点分色，可选中复制、可双向滚动，
+还能「放大查看」开到全屏（`自动换行` 可切）。
 
 左侧服务列表：已知服务排在前面，`:1.x` 这类唯一名排到最后。
 
@@ -199,6 +201,20 @@ dbus-monitor: unable to enable new-style monitoring:
 
 这也是 `--dump-tree` 存在的原因——树结构对不对，肉眼数一遍行比看截图快。
 
+### 4. 到达对象后展开什么，得看它下面有什么
+
+自动定位到对象之后，一开始我无脑展开"这个对象自己的接口"，结果
+`org.freedesktop.Accounts` 出问题了：接口一展开就是 8 个方法 + 2 个信号 + 4 个属性，
+把真正想看的 `User1000`…`User1008` 全挤到可视区域下面——用户以为"看不到用户账号"，
+其实是在折叠线以下。
+
+现在的规则按对象形态决定：
+
+- **下面还有子路径**（如 `/org/freedesktop/Accounts` 底下一堆 `User*`）→
+  子对象才是主体，接口**保持折叠**
+- **没有子路径**（叶子对象，如 `/org/deepin/dde/Timedate1`）→
+  展开它自己的接口，让方法直接可见
+
 ---
 
 ## 构建与运行
@@ -219,6 +235,7 @@ dbus-monitor: unable to enable new-style monitoring:
 --demo                  自检：监听 + 打开服务 + 加一条监听 + 选个方法/属性真跑一次
 --demo-method <name>    自检时优先选中的方法或属性名
 --demo-seed <value>     自检时给第一个字符串参数填的值
+--expand-json           JSON 值默认展开（自检/截图用）
 --dump-tree             打印对象树的行（id/kind/name/depth）后退出，调试树结构用
 --screenshot <path>     渲染一帧保存 PNG 后退出
 --screenshot-delay <ms> 截图前等待毫秒数

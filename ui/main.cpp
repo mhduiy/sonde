@@ -76,6 +76,8 @@ int main(int argc, char *argv[])
     QCommandLineOption demoMethodOpt(QStringLiteral("demo-method"),
                                      QStringLiteral("自检时优先选中的方法名"),
                                      QStringLiteral("name"), QString());
+    QCommandLineOption expandJsonOpt(QStringLiteral("expand-json"),
+                                     QStringLiteral("JSON 值默认展开显示（自检/截图用）"));
     QCommandLineOption shotOpt(QStringLiteral("screenshot"),
                                QStringLiteral("渲染一帧后保存为 PNG 并退出"),
                                QStringLiteral("path"));
@@ -105,6 +107,7 @@ int main(int argc, char *argv[])
     parser.addOption(demoOpt);
     parser.addOption(demoSeedOpt);
     parser.addOption(demoMethodOpt);
+    parser.addOption(expandJsonOpt);
     parser.addOption(shotOpt);
     parser.addOption(delayOpt);
     parser.addOption(dumpOpt);
@@ -139,6 +142,8 @@ int main(int argc, char *argv[])
                                             parser.value(demoSeedOpt));
     engine.rootContext()->setContextProperty(QStringLiteral("demoMethod"),
                                             parser.value(demoMethodOpt));
+    engine.rootContext()->setContextProperty(QStringLiteral("jsonExpanded"),
+                                            parser.isSet(expandJsonOpt));
 
     engine.load(QUrl::fromLocalFile(QStringLiteral(SONDE_QML_DIR) + QStringLiteral("/main.qml")));
     if (engine.rootObjects().isEmpty()) {
