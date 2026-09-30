@@ -80,3 +80,19 @@ function clockOf(us) {
     function p(n) { return (n < 10 ? "0" : "") + n }
     return p(d.getHours()) + ":" + p(d.getMinutes()) + ":" + p(d.getSeconds())
 }
+
+/// 右键"加入过滤条件"时生成的过滤词条。
+/// 语义上等价于以前"加入监听列表"，但结果落到过滤框里。
+function filterTerm(kind, dest, path, iface, member) {
+    if (kind === "service")
+        return "svc:" + dest
+    if (kind === "path")
+        return "path:" + path
+    if (kind === "interface")
+        return "iface:" + iface
+    if (kind === "method" || kind === "signal")
+        return "iface:" + iface + " member:" + member
+    if (kind === "property")
+        return "type:signal prop:" + member
+    return ""
+}

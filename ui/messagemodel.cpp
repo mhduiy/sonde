@@ -151,19 +151,10 @@ MessageFilter::MessageFilter(QObject *parent)
     : QSortFilterProxyModel(parent)
 {
     setDynamicSortFilter(true);
-
-    // 过滤结果条数变化时同步刷新 QML 里绑定的 count
     connect(this, &QAbstractItemModel::rowsInserted, this, [this] { emit countChanged(); });
     connect(this, &QAbstractItemModel::rowsRemoved, this, [this] { emit countChanged(); });
     connect(this, &QAbstractItemModel::modelReset, this, [this] { emit countChanged(); });
     connect(this, &QAbstractItemModel::layoutChanged, this, [this] { emit countChanged(); });
-}
-
-QVariantMap MessageFilter::at(int row) const
-{
-    if (row < 0 || row >= rowCount())
-        return {};
-    return data(index(row, 0), MessageModel::RawRole).toMap();
 }
 
 void MessageFilter::setQuery(const QString &q)
@@ -171,11 +162,53 @@ void MessageFilter::setQuery(const QString &q)
     if (m_query == q)
         return;
     m_query = q;
-    m_terms = q.toLower().split(QRegularExpression(QStringLiteral("\\s+")),
-                                Qt::SkipEmptyParts);
+
+    m_terms.clear();
+    // 注意：**不能**把整条 query 先转小写再解析——D-Bus 名字大小写敏感，
+    // 用转小写后的名字去 GetNameOwner 必然查不到。
+    // 原样解析，只把用于"比较"的值转小写。
+    const QStringList raw = q.split(
+        QRegularExpression(QStringLiteral("\\s+")), Qt::SkipEmptyParts);
+    for (const QString &t : raw) {
+        Term term;
+        const int colon = t.indexOf(QLatin1Char(':'));
+        if (colon > 0) {
+            term.field = t.left(colon).toLower();
+            const QString rawValue = t.mid(colon + 1);
+            term.value = rawValue.toLower();
+            // svc/sender/dest 额外解析唯一名：**信号的 sender 是 :1.x**
+            if ((term.field == QLatin1String("svc") || term.field == QLatin1String("sender")
+                 || term.field == QLatin1String("dest"))
+                && m_resolver && !rawValue.isEmpty()) {
+                const QString owner = m_resolver(rawValue); // 用原始大小写
+                if (!owner.isEmpty())
+                    term.alt = owner.toLower();
+            }
+        } else {
+            term.value = t.toLower();
+        }
+        m_terms.append(term);
+    }
+
     invalidateFilter();
     emit queryChanged();
     emit countChanged();
+}
+
+void MessageFilter::addQuery(const QString &term)
+{
+    const QString t = term.trimmed();
+    if (t.isEmpty() || m_query.contains(t, Qt::CaseInsensitive))
+        return;
+    const QString cur = m_query.trimmed();
+    setQuery(cur.isEmpty() ? t : (cur + QStringLiteral("  ") + t));
+}
+
+QVariantMap MessageFilter::at(int row) const
+{
+    if (row < 0 || row >= rowCount())
+        return {};
+    return data(index(row, 0), MessageModel::RawRole).toMap();
 }
 
 bool MessageFilter::filterAcceptsRow(int row, const QModelIndex &parent) const
@@ -188,19 +221,38 @@ bool MessageFilter::filterAcceptsRow(int row, const QModelIndex &parent) const
         return true;
 
     const QModelIndex idx = src->index(row, 0, parent);
-    const QString hay = src->data(idx, MessageModel::SearchRole).toString();
 
-    for (const QString &term : m_terms) {
-        const int colon = term.indexOf(QLatin1Char(':'));
-        if (colon > 0) {
-            // field:value —— 在对应字段里找
-            const QString field = term.left(colon);
-            const QString value = term.mid(colon + 1);
-            const QString actual = src->data(idx, fieldRole(field)).toString().toLower();
-            if (!actual.contains(value))
+    for (const Term &term : m_terms) {
+        if (term.field.isEmpty()) {
+            const QString hay = src->data(idx, MessageModel::SearchRole).toString();
+            if (!hay.contains(term.value))
                 return false;
-        } else if (!hay.contains(term)) {
-            return false;
+            continue;
+        }
+
+        if (term.field == QLatin1String("svc")) {
+            const QString sender =
+                src->data(idx, MessageModel::SenderRole).toString().toLower();
+            const QString dest =
+                src->data(idx, MessageModel::DestRole).toString().toLower();
+            const bool hit = sender.contains(term.value) || dest.contains(term.value)
+                             || (!term.alt.isEmpty()
+                                 && (sender.contains(term.alt) || dest.contains(term.alt)));
+            if (!hit)
+                return false;
+        } else if (term.field == QLatin1String("prop")) {
+            // 属性名只在摘要里找（两种信号风格都能覆盖）
+            const QString summary =
+                src->data(idx, MessageModel::SummaryRole).toString().toLower();
+            if (!summary.contains(term.value))
+                return false;
+        } else {
+            const int role = fieldRole(term.field);
+            const QString actual = src->data(idx, role).toString().toLower();
+            const bool hit = actual.contains(term.value)
+                             || (!term.alt.isEmpty() && actual.contains(term.alt));
+            if (!hit)
+                return false;
         }
     }
     return true;

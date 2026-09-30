@@ -357,16 +357,11 @@ Rectangle {
         id: nodeMenu
 
         MenuItem {
-            text: "加入监听列表"
+            text: "加入过滤条件"
             visible: root.menuTarget !== null && root.menuTarget.kind !== "arg"
             onTriggered: {
                 var n = root.menuTarget
-                var kind = "path"
-                if (n.kind === "interface") kind = "interface"
-                else if (n.kind === "method") kind = "member"
-                else if (n.kind === "signal") kind = "member"
-                else if (n.kind === "property") kind = "property"
-                bridge.addWatch(kind, n.bus, n.dest, n.path, n.iface, n.member)
+                msgFilter.addQuery(K.filterTerm(n.kind, n.dest, n.path, n.iface, n.member))
             }
         }
         MenuItem {

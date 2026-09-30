@@ -398,6 +398,8 @@ Bridge::Bridge(QObject *parent)
     : QObject(parent)
 {
     m_filter.setSourceModel(&m_model);
+    // 让过滤器能把"服务名"解析成唯一名（信号 sender 是 :1.x）
+    m_filter.setNameResolver([this](const QString &n) { return nameOwner(m_bus, n); });
     m_core = sonde_core_new();
 }
 
@@ -453,7 +455,6 @@ void Bridge::clear()
     m_model.clear();
     m_pending.clear();
     m_total = 0;
-    m_matched = 0;
     emit pendingChanged();
     emit totalChanged();
 }
@@ -466,14 +467,6 @@ void Bridge::setPaused(bool p)
     if (!m_paused)
         flushPending();
     emit pausedChanged();
-}
-
-void Bridge::setOnlyWatched(bool v)
-{
-    if (m_onlyWatched == v)
-        return;
-    m_onlyWatched = v;
-    emit onlyWatchedChanged();
 }
 
 void Bridge::flushPending()
@@ -504,11 +497,6 @@ void Bridge::handleBatch(const QByteArray &payload)
             continue;
         }
         ++m_total;
-        if (m_onlyWatched) {
-            if (!matchesWatch(m))
-                continue;
-            ++m_matched;
-        }
         // 摘要在这里算一次：既给界面显示，也进搜索串（可按属性名过滤）
         m.insert(QStringLiteral("summary"), summarizeMessage(m));
         msgs.append(m);
@@ -526,140 +514,6 @@ void Bridge::handleBatch(const QByteArray &payload)
         return;
     }
     m_model.appendBatch(msgs);
-}
-
-// ------------------------------------------------------------------- 监听列表
-
-bool Bridge::matchesWatch(const QVariantMap &m) const
-{
-    if (m_watches.isEmpty())
-        return false;
-
-    const QString path = m.value(QStringLiteral("path")).toString();
-    const QString iface = m.value(QStringLiteral("interface")).toString();
-    const QString member = m.value(QStringLiteral("member")).toString();
-    const QString sender = m.value(QStringLiteral("sender")).toString();
-    const QString dest = m.value(QStringLiteral("destination")).toString();
-
-    for (const QVariant &v : m_watches) {
-        const QVariantMap w = v.toMap();
-        const QString kind = w.value(QStringLiteral("kind")).toString();
-        const QString wDest = w.value(QStringLiteral("dest")).toString();
-
-        // 服务约束：消息的 sender 或 destination 命中即可。
-        // 注意信号的 sender 是**唯一名**，所以还要拿存下来的 owner 比一遍。
-        const QString wUnique = w.value(QStringLiteral("unique")).toString();
-        const bool destOk = wDest.isEmpty()
-                            || sender == wDest || dest == wDest
-                            || (!wUnique.isEmpty()
-                                && (sender == wUnique || dest == wUnique));
-        if (!destOk)
-            continue;
-
-        if (kind == QLatin1String("service"))
-            return true;
-        if (kind == QLatin1String("path")) {
-            if (path == w.value(QStringLiteral("path")).toString())
-                return true;
-            continue;
-        }
-        if (kind == QLatin1String("interface")) {
-            if (path == w.value(QStringLiteral("path")).toString()
-                && iface == w.value(QStringLiteral("iface")).toString())
-                return true;
-            continue;
-        }
-        if (kind == QLatin1String("member")) {
-            if (path == w.value(QStringLiteral("path")).toString()
-                && iface == w.value(QStringLiteral("iface")).toString()
-                && member == w.value(QStringLiteral("member")).toString())
-                return true;
-            continue;
-        }
-        if (kind == QLatin1String("property")) {
-            // 属性变更走标准的 PropertiesChanged（接口是 Properties 而非原接口）。
-            // 还要看 changed_properties 里**确实包含**被监听的那个属性，
-            // 否则同一路径上别的属性变化也会命中。
-            if (path == w.value(QStringLiteral("path")).toString()
-                && member == QLatin1String("PropertiesChanged")
-                && changedPropsContain(m, w.value(QStringLiteral("member")).toString()))
-                return true;
-            continue;
-        }
-    }
-    return false;
-}
-
-bool Bridge::addWatch(const QString &kind, const QString &bus, const QString &dest,
-                      const QString &path, const QString &iface, const QString &member)
-{
-    Q_UNUSED(bus);
-    if (isWatched(kind, dest, path, iface, member))
-        return false;
-
-    QString label;
-    if (kind == QLatin1String("service"))
-        label = dest;
-    else if (kind == QLatin1String("path"))
-        label = dest + QStringLiteral("  ") + path;
-    else if (kind == QLatin1String("interface"))
-        label = dest + QStringLiteral("  ") + path + QStringLiteral("  ") + iface;
-    else
-        label = dest + QStringLiteral("  ") + path + QStringLiteral("  ") + iface
-                + QStringLiteral(".") + member;
-
-    // 关键：把公共名解析成唯一名一起存。信号的 sender 是唯一名（:1.x），
-    // 不解析的话"监听某个服务的信号/属性"永远匹配不上。
-    const QString owner = nameOwner(bus.isEmpty() ? m_bus : bus, dest);
-
-    m_watches.append(QVariantMap{
-        { QStringLiteral("kind"), kind },
-        { QStringLiteral("dest"), dest },
-        { QStringLiteral("unique"), owner },
-        { QStringLiteral("path"), path },
-        { QStringLiteral("iface"), iface },
-        { QStringLiteral("member"), member },
-        { QStringLiteral("label"), label },
-    });
-    emit watchesChanged();
-
-    // "加入监听列表"的意图就是只看它，所以顺手打开只看监听
-    if (!m_onlyWatched) {
-        m_onlyWatched = true;
-        emit onlyWatchedChanged();
-    }
-    return true;
-}
-
-void Bridge::removeWatch(int index)
-{
-    if (index < 0 || index >= m_watches.size())
-        return;
-    m_watches.removeAt(index);
-    emit watchesChanged();
-}
-
-void Bridge::clearWatches()
-{
-    if (m_watches.isEmpty())
-        return;
-    m_watches.clear();
-    emit watchesChanged();
-}
-
-bool Bridge::isWatched(const QString &kind, const QString &dest, const QString &path,
-                       const QString &iface, const QString &member) const
-{
-    for (const QVariant &v : m_watches) {
-        const QVariantMap w = v.toMap();
-        if (w.value(QStringLiteral("kind")).toString() == kind
-            && w.value(QStringLiteral("dest")).toString() == dest
-            && w.value(QStringLiteral("path")).toString() == path
-            && w.value(QStringLiteral("iface")).toString() == iface
-            && w.value(QStringLiteral("member")).toString() == member)
-            return true;
-    }
-    return false;
 }
 
 // ------------------------------------------------------------------- 调用
@@ -810,9 +664,12 @@ QString Bridge::nameOwner(const QString &bus, const QString &name) const
     const QByteArray n = utf8(name);
     const QString json = takeRust(sonde_name_owner(m_core, b.constData(), n.constData()));
     const QJsonDocument doc = QJsonDocument::fromJson(json.toUtf8());
-    if (!doc.isObject())
-        return QString();
-    return doc.object().value(QStringLiteral("owner")).toString();
+    const QString owner = doc.isObject()
+                              ? doc.object().value(QStringLiteral("owner")).toString()
+                              : QString();
+    if (qEnvironmentVariableIsSet("SONDE_DEBUG_CALL"))
+        qWarning() << "[sonde] nameOwner" << bus << name << "->" << owner;
+    return owner;
 }
 
 QStringList Bridge::listNames(const QString &bus)

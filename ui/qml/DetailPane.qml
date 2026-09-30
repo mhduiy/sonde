@@ -34,23 +34,11 @@ Rectangle {
     readonly property bool writable: isProperty
                                      && (node.access || "").indexOf("write") >= 0
 
-    function watchKindOf(n) {
-        if (!n)
-            return ""
-        if (n.kind === "method" || n.kind === "signal")
-            return "member"
-        if (n.kind === "property")
-            return "property"
-        if (n.kind === "interface")
-            return "interface"
-        return "path"
-    }
-
     function addCurrentWatch() {
         if (!root.node)
             return
-        bridge.addWatch(watchKindOf(root.node), node.bus || root.bus, root.node.dest,
-                        root.node.path, root.node.iface, root.node.member)
+        msgFilter.addQuery(K.filterTerm(root.node.kind, root.node.dest, root.node.path,
+                                       root.node.iface, root.node.member))
     }
 
     function readProperty(n) {
@@ -173,11 +161,11 @@ Rectangle {
 
                     D.ToolButton {
                         visible: root.node !== null && root.node.kind !== "arg"
-                        text: "＋ 监听"
+                        text: "＋ 过滤"
                         implicitHeight: 24
                         onClicked: root.addCurrentWatch()
                         ToolTip.visible: hovered
-                        ToolTip.text: "把这个节点加入监听列表"
+                        ToolTip.text: "把这个节点加进监听面板的过滤条件"
                     }
                 }
 

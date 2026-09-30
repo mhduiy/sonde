@@ -45,7 +45,8 @@ D.ApplicationWindow {
         if (typeof demoMode !== "undefined" && demoMode) {
             watchPane.expanded = true
             bridge.startMonitor(root.busName)
-            bridge.addWatch("service", root.busName, "org.freedesktop.DBus", "", "", "")
+            // 自检：过滤条件落在过滤框里，等价于以前的"加入监听列表"
+            msgFilter.addQuery("svc:org.freedesktop.DBus")
 
             function pickNode() {
                 var rows = tree.rows

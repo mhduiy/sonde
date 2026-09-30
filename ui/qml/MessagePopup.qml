@@ -194,13 +194,19 @@ Popup {
                     elide: Text.ElideMiddle
                 }
                 D.Button {
-                    text: "监听这条消息的来源"
-                    enabled: root.msg !== null && (root.msg.member || "") !== ""
+                    text: "把这几个条件加进过滤框"
+                    enabled: root.msg !== null
                     onClicked: {
-                        var kind = root.msg.type === "signal" ? "member" : "member"
-                        bridge.addWatch(kind, "", root.msg.sender || "",
-                                        root.msg.path || "", root.msg.interface || "",
-                                        root.msg.member || "")
+                        var terms = []
+                        if (root.msg.interface)
+                            terms.push("iface:" + root.msg.interface)
+                        if (root.msg.member)
+                            terms.push("member:" + root.msg.member)
+                        if (root.msg.path)
+                            terms.push("path:" + root.msg.path)
+                        if (terms.length === 0 && root.msg.sender)
+                            terms.push("svc:" + root.msg.sender)
+                        msgFilter.addQuery(terms.join("  "))
                         root.close()
                     }
                 }

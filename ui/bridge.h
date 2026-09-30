@@ -46,9 +46,6 @@ class Bridge : public QObject
     Q_PROPERTY(bool paused READ paused WRITE setPaused NOTIFY pausedChanged)
     Q_PROPERTY(int pending READ pending NOTIFY pendingChanged)
     Q_PROPERTY(int total READ total NOTIFY totalChanged)
-    Q_PROPERTY(int matched READ matched NOTIFY totalChanged)
-    Q_PROPERTY(QVariantList watches READ watches NOTIFY watchesChanged)
-    Q_PROPERTY(bool onlyWatched READ onlyWatched WRITE setOnlyWatched NOTIFY onlyWatchedChanged)
 
 public:
     explicit Bridge(QObject *parent = nullptr);
@@ -61,10 +58,6 @@ public:
     void setPaused(bool p);
     int pending() const { return static_cast<int>(m_pending.size()); }
     int total() const { return m_total; }
-    int matched() const { return m_matched; }
-    QVariantList watches() const { return m_watches; }
-    bool onlyWatched() const { return m_onlyWatched; }
-    void setOnlyWatched(bool v);
 
     Q_INVOKABLE void startMonitor(const QString &bus);
     Q_INVOKABLE void stopMonitor();
@@ -97,19 +90,8 @@ public:
                                         const QString &prop, const QString &typeSig,
                                         const QString &valueText);
 
-    // ---- 监听列表 ----
-    Q_INVOKABLE bool addWatch(const QString &kind, const QString &bus, const QString &dest,
-                              const QString &path, const QString &iface,
-                              const QString &member);
-    Q_INVOKABLE void removeWatch(int index);
-    Q_INVOKABLE void clearWatches();
-    Q_INVOKABLE bool isWatched(const QString &kind, const QString &dest, const QString &path,
-                               const QString &iface, const QString &member) const;
-
     /// 把公共名解析成唯一名（:1.x）。
     /// 信号的 sender 是唯一名，不解析的话"监听某个服务的信号"永远匹配不上。
-    Q_INVOKABLE QString nameOwner(const QString &bus, const QString &name) const;
-
     Q_INVOKABLE QString messageToText(const QVariantMap &msg) const;
     Q_INVOKABLE QString nodeToText(const QVariantMap &node, int indent = 0) const;
     /// JSON 语法高亮：返回按行切好的 HTML，供 CodeView 渲染（带行号、可选中）
@@ -127,8 +109,6 @@ signals:
     void pausedChanged();
     void pendingChanged();
     void totalChanged();
-    void watchesChanged();
-    void onlyWatchedChanged();
     void callFinished(quint64 id, const QVariantMap &result);
     void propertyRead(quint64 id, const QVariantMap &node, const QString &iface,
                       const QString &name, const QString &error);
@@ -142,9 +122,10 @@ private:
     /// 由签名生成一个变体参数节点，供 Properties.Set 使用
     QVariantMap makeVariantArg(const QString &typeSig, const QString &valueText) const;
     void flushPending();
+    /// 公共名 → 唯一名（过滤器用它把服务名也匹配上信号的 sender）
+    QString nameOwner(const QString &bus, const QString &name) const;
     /// 一行摘要：PropertiesChanged 抽出"属性 = 值"，其它把参数紧凑列出
     QString summarizeMessage(const QVariantMap &m) const;
-    bool matchesWatch(const QVariantMap &msg) const;
 
     SondeCore *m_core = nullptr;
     MessageModel m_model;
@@ -153,11 +134,8 @@ private:
     bool m_paused = false;
     QString m_bus = QStringLiteral("session");
     QList<QVariantMap> m_pending;
-    QVariantList m_watches;
-    bool m_onlyWatched = false;
     quint64 m_nextCallId = 1;
     int m_total = 0;
-    int m_matched = 0;
     QHash<quint64, int> m_callKind;            // 0 = call, 1 = getProp, 2 = getAll
     QHash<quint64, QStringList> m_callMeta;    // getProp 的 (iface, name)
 };

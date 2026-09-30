@@ -193,8 +193,13 @@ Rectangle {
             onTriggered: root.serviceActivated(serviceMenu.target)
         }
         MenuItem {
-            text: "加入监听列表（该服务的全部消息）"
-            onTriggered: bridge.addWatch("service", root.bus, serviceMenu.target, "", "", "")
+            text: "加入过滤条件（该服务的消息）"
+            onTriggered: {
+                if (typeof K !== "undefined")
+                    msgFilter.addQuery("svc:" + serviceMenu.target)
+                else
+                    msgFilter.addQuery("svc:" + serviceMenu.target)
+            }
         }
         MenuSeparator {}
         MenuItem {

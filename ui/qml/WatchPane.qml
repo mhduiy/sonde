@@ -1,11 +1,15 @@
 import QtQuick
 import QtQuick.Controls
-import org.deepin.dtk 1.0 as D
 import QtQuick.Layouts
+import org.deepin.dtk 1.0 as D
 import "kinds.js" as K
 
-/// 底部可折叠面板：监听列表 + 实时消息流。
-/// 监听是**附属功能**——平时折叠着，右键"加入监听列表"时会自动展开。
+/// 底部面板：过滤框 + 实时消息流。
+///
+/// 设计：不再有"监听列表"，只有**一个过滤表达式**。
+/// - 过滤框为空 → 全看；非空 → 只看命中的（空格分隔即 AND）
+/// - 右键"加入过滤条件"就是往这个框里追加词条
+/// - 好处：条件改了立刻重筛**已有的缓冲**，不是只对将来的消息生效
 Rectangle {
     id: root
 
@@ -54,38 +58,43 @@ Rectangle {
                         onClicked: root.expanded = !root.expanded
                     }
                 }
-                Label {
-                    text: "(" + bridge.watches.length + " 项)"
-                    color: theme.textFaint
-                    font.pixelSize: 11
-                }
 
                 D.Button {
                     text: bridge.monitoring ? "停止监听" : "开始监听"
                     implicitHeight: 24
+                    visible: root.width > 640
                     onClicked: bridge.monitoring
                                ? bridge.stopMonitor()
                                : bridge.startMonitor(root.bus)
                 }
 
-                // 折叠时高度只有 36px，塞不下所有控件，会横向溢出被裁。
-                // 次要的收进 ⋯ 菜单；"只看监听列表"开关在窄的时候也藏起来，
-                // 菜单里有等价项。
-                D.Switch {
+                // 过滤框：整个面板的核心控件
+                TextField {
+                    id: filterField
+                    Layout.fillWidth: true
+                    Layout.minimumWidth: 110
                     implicitHeight: 26
-                    visible: root.width > 820
-                    text: "只看监听列表"
-                    checked: bridge.onlyWatched
-                    onToggled: bridge.onlyWatched = checked
+                    placeholderText: "过滤：iface:  member:  path:  svc:  prop:  type:signal"
+                    font.family: "monospace"
                     font.pixelSize: 11
+                    text: msgFilter.query
+                    onTextChanged: msgFilter.query = text
+                    ToolTip.visible: hovered
+                    ToolTip.text: "空格分隔多个条件是 AND；不带字段名则在全部内容里找子串"
+                }
+                D.ToolButton {
+                    text: "✕"
+                    implicitWidth: 26
+                    implicitHeight: 24
+                    visible: msgFilter.query !== ""
+                    onClicked: msgFilter.query = ""
+                    ToolTip.visible: hovered
+                    ToolTip.text: "清空过滤条件"
                 }
 
-                Item { Layout.fillWidth: true }
-
                 Label {
-                    visible: root.expanded && root.width > 760
-                    text: "匹配 " + bridge.matched + "   收到 " + bridge.total
-                          + "   显示 " + msgFilter.count
+                    visible: root.expanded && root.width > 960
+                    text: "显示 " + msgFilter.count + " / 收到 " + bridge.total
                     color: theme.textFaint
                     font.family: "monospace"
                     font.pixelSize: 11
@@ -110,11 +119,12 @@ Rectangle {
             Menu {
                 id: watchMenu
                 MenuItem {
-                    text: "只看监听列表"
-                    checkable: true
-                    checked: bridge.onlyWatched
-                    onTriggered: bridge.onlyWatched = !bridge.onlyWatched
+                    text: bridge.monitoring ? "停止监听" : "开始监听"
+                    onTriggered: bridge.monitoring
+                                 ? bridge.stopMonitor()
+                                 : bridge.startMonitor(root.bus)
                 }
+                MenuSeparator {}
                 MenuItem {
                     text: bridge.paused ? "继续接收" : "暂停接收"
                     enabled: bridge.monitoring
@@ -124,10 +134,14 @@ Rectangle {
                     text: "清空消息"
                     onTriggered: bridge.clear()
                 }
+                MenuItem {
+                    text: "清空过滤条件"
+                    enabled: msgFilter.query !== ""
+                    onTriggered: msgFilter.query = ""
+                }
                 MenuSeparator {}
                 MenuItem {
-                    text: "匹配 " + bridge.matched + "   收到 " + bridge.total
-                          + "   显示 " + msgFilter.count
+                    text: "显示 " + msgFilter.count + " / 收到 " + bridge.total
                     enabled: false
                 }
             }
@@ -140,297 +154,164 @@ Rectangle {
             }
         }
 
-        // ---------------------------------------------------------- 内容
-        RowLayout {
+        // ---------------------------------------------------------- 消息流
+        Rectangle {
             Layout.fillWidth: true
             Layout.fillHeight: true
             visible: root.expanded
-            spacing: 0
+            color: theme.bg
 
-            // ---- 监听列表 ----
-            Rectangle {
-                Layout.preferredWidth: 320
-                Layout.fillHeight: true
-                color: theme.surface
+            ListView {
+                id: stream
+                anchors.fill: parent
+                clip: true
+                model: msgFilter
+                reuseItems: true
+                cacheBuffer: 3000
+                ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
 
-                ColumnLayout {
-                    anchors.fill: parent
-                    spacing: 0
+                property bool following: true
+                onMovementEnded: following = atYEnd
 
-                    Rectangle {
-                        Layout.fillWidth: true
-                        implicitHeight: 26
-                        color: theme.bg
-                        RowLayout {
-                            anchors.fill: parent
-                            anchors.leftMargin: 10
-                            anchors.rightMargin: 6
+                delegate: ItemDelegate {
+                    id: srow
+                    required property int index
+                    required property string msgType
+                    required property string member
+                    required property string path
+                    required property string summary
+                    required property var raw
+
+                    width: stream.width
+                    height: 26
+
+                    background: Rectangle {
+                        color: srow.hovered ? theme.hover : "transparent"
+                    }
+
+                    onClicked: {
+                        popup.msg = srow.raw
+                        popup.open()
+                    }
+
+                    // 普通 Row + 显式宽度：需要省略的列给 elide，
+                    // 宽度确定才不会像 RowLayout 那样溢出被裁（见 README 第 10 条）
+                    contentItem: Row {
+                        id: srowContent
+                        spacing: 6
+
+                        readonly property real fixed:
+                            66 + 52 + 130 + 112 + 12 + 170 + 160 + 6 * 7
+
+                        Label {
+                            width: 66
+                            height: srow.height
+                            verticalAlignment: Text.AlignVCenter
+                            text: K.clockOf(srow.raw.timestamp_us)
+                            color: theme.textFaint
+                            font.family: "monospace"
+                            font.pixelSize: 10
+                        }
+
+                        Rectangle {
+                            width: 52
+                            height: 15
+                            y: (srow.height - height) / 2
+                            radius: 2
+                            color: "transparent"
+                            border.width: 1
+                            border.color: K.msgColor(theme, srow.msgType)
                             Label {
-                                text: "监听列表"
-                                color: theme.textDim
-                                font.pixelSize: 11
+                                anchors.centerIn: parent
+                                text: K.msgLabel(srow.msgType)
+                                color: K.msgColor(theme, srow.msgType)
+                                font.pixelSize: 8
                                 font.bold: true
                             }
-                            Item { Layout.fillWidth: true }
-                            D.ToolButton {
-                                text: "全部清除"
-                                implicitHeight: 20
-                                enabled: bridge.watches.length > 0
-                                onClicked: bridge.clearWatches()
-                            }
                         }
-                    }
 
-                    Label {
-                        Layout.fillWidth: true
-                        Layout.fillHeight: true
-                        visible: bridge.watches.length === 0
-                        horizontalAlignment: Text.AlignHCenter
-                        verticalAlignment: Text.AlignVCenter
-                        wrapMode: Text.WordWrap
-                        text: "还没有监听项\n\n在中间的树里右键任意\n路径 / 接口 / 方法 / 信号 / 属性\n选择「加入监听列表」"
-                        color: theme.textFaint
-                        font.pixelSize: 11
-                    }
+                        // sender → 接收者：都能点，点了跳到那个服务
+                        ClickableName {
+                            width: 130
+                            height: srow.height
+                            name: (srow.raw.sender !== undefined && srow.raw.sender !== null)
+                                  ? ("" + srow.raw.sender) : ""
+                            onClicked: root.serviceJumpRequested(srow.raw.sender)
+                        }
+                        Label {
+                            width: 12
+                            height: srow.height
+                            verticalAlignment: Text.AlignVCenter
+                            horizontalAlignment: Text.AlignHCenter
+                            text: "→"
+                            color: theme.textFaint
+                            font.pixelSize: 10
+                        }
+                        ClickableName {
+                            width: 100
+                            height: srow.height
+                            name: (srow.raw.destination !== undefined
+                                   && srow.raw.destination !== null)
+                                  ? ("" + srow.raw.destination) : ""
+                            emptyText: "（广播）"
+                            onClicked: root.serviceJumpRequested(srow.raw.destination)
+                        }
 
-                    ListView {
-                        id: watchList
-                        Layout.fillWidth: true
-                        Layout.fillHeight: true
-                        visible: bridge.watches.length > 0
-                        clip: true
-                        model: bridge.watches
-                        ScrollBar.vertical: ScrollBar {}
+                        Label {
+                            width: 170
+                            height: srow.height
+                            verticalAlignment: Text.AlignVCenter
+                            text: srow.raw.interface !== undefined
+                                  ? ("" + srow.raw.interface) : ""
+                            color: theme.textDim
+                            font.family: "monospace"
+                            font.pixelSize: 11
+                            elide: Text.ElideMiddle
+                        }
 
-                        delegate: ItemDelegate {
-                            id: wrow
-                            required property var modelData
-                            required property int index
+                        // 一行摘要：PropertiesChanged 会显示"属性 = 值"
+                        Label {
+                            width: Math.max(60, srow.width - srowContent.fixed)
+                            height: srow.height
+                            verticalAlignment: Text.AlignVCenter
+                            text: (srow.member !== "" ? (srow.member + "   ") : "")
+                                  + srow.summary
+                            color: srow.summary !== "" ? theme.accent : theme.text
+                            font.family: "monospace"
+                            font.pixelSize: 11
+                            elide: Text.ElideRight
+                        }
 
-                            width: watchList.width
-                            height: 36
-
-                            background: Rectangle {
-                                color: wrow.hovered ? theme.hover : "transparent"
-                            }
-
-                            contentItem: RowLayout {
-                                spacing: 6
-
-                                Rectangle {
-                                    implicitWidth: 44
-                                    implicitHeight: 15
-                                    radius: 2
-                                    color: "transparent"
-                                    border.width: 1
-                                    border.color: K.colorFor(theme, wrow.modelData.kind)
-                                    Label {
-                                        anchors.centerIn: parent
-                                        text: K.shortLabel(wrow.modelData.kind)
-                                        color: K.colorFor(theme, wrow.modelData.kind)
-                                        font.pixelSize: 8
-                                        font.bold: true
-                                    }
-                                }
-
-                                Label {
-                                    Layout.fillWidth: true
-                                    text: wrow.modelData.label
-                                    color: theme.text
-                                    font.family: "monospace"
-                                    font.pixelSize: 11
-                                    elide: Text.ElideRight
-                                }
-
-                                D.ToolButton {
-                                    text: "✕"
-                                    implicitWidth: 22
-                                    implicitHeight: 22
-                                    onClicked: bridge.removeWatch(wrow.index)
-                                    ToolTip.visible: hovered
-                                    ToolTip.text: "从监听列表移除"
-                                }
-                            }
+                        Label {
+                            width: 160
+                            height: srow.height
+                            verticalAlignment: Text.AlignVCenter
+                            text: srow.path
+                            color: theme.textFaint
+                            font.family: "monospace"
+                            font.pixelSize: 10
+                            elide: Text.ElideMiddle
                         }
                     }
                 }
 
-                Rectangle {
-                    anchors.right: parent.right
-                    width: 1
-                    height: parent.height
-                    color: theme.border
-                }
+                onCountChanged: if (following) Qt.callLater(positionViewAtEnd)
             }
 
-            // ---- 实时消息流 ----
-            Rectangle {
-                Layout.fillWidth: true
-                Layout.fillHeight: true
-                color: theme.bg
-
-                ColumnLayout {
-                    anchors.fill: parent
-                    spacing: 0
-
-                    ListView {
-                        id: stream
-                        Layout.fillWidth: true
-                        Layout.fillHeight: true
-                        clip: true
-                        model: msgFilter
-                        reuseItems: true
-                        cacheBuffer: 2000
-                        ScrollBar.vertical: ScrollBar {}
-
-                        property bool following: true
-                        onMovementEnded: following = atYEnd
-
-                        delegate: ItemDelegate {
-                            id: srow
-                            required property int index
-                            required property string msgType
-                            required property string member
-                            required property string iface
-                            required property string path
-                            required property var raw
-                            required property var timestampUs
-                            required property string summary
-
-                            width: stream.width
-                            height: 26
-
-                            background: Rectangle {
-                                color: srow.hovered ? theme.hover : "transparent"
-                            }
-
-                            onClicked: {
-                                popup.msg = srow.raw
-                                popup.open()
-                            }
-
-                            // 用普通 Row + 显式宽度：需要省略的列给 elide，
-                            // 宽度确定才不会像 RowLayout 那样溢出被裁。
-                            contentItem: Row {
-                                id: srowContent
-                                spacing: 6
-
-                                readonly property real fixed:
-                                    66 + 52 + 106 + 92 + 12 + 150 + 140 + 6 * 7
-
-                                Label {
-                                    width: 66
-                                    height: srow.height
-                                    verticalAlignment: Text.AlignVCenter
-                                    text: K.clockOf(srow.timestampUs)
-                                    color: theme.textFaint
-                                    font.family: "monospace"
-                                    font.pixelSize: 10
-                                }
-
-                                Rectangle {
-                                    width: 52
-                                    height: 15
-                                    y: (srow.height - height) / 2
-                                    radius: 2
-                                    color: "transparent"
-                                    border.width: 1
-                                    border.color: K.msgColor(theme, srow.msgType)
-                                    Label {
-                                        anchors.centerIn: parent
-                                        text: K.msgLabel(srow.msgType)
-                                        color: K.msgColor(theme, srow.msgType)
-                                        font.pixelSize: 8
-                                        font.bold: true
-                                    }
-                                }
-
-                                // sender → 接收者：都能点，点了跳到那个服务
-                                ClickableName {
-                                    width: 106
-                                    height: srow.height
-                                    name: (srow.raw.sender !== undefined && srow.raw.sender !== null)
-                                          ? ("" + srow.raw.sender) : ""
-                                    onClicked: root.serviceJumpRequested(srow.raw.sender)
-                                }
-                                Label {
-                                    width: 12
-                                    height: srow.height
-                                    verticalAlignment: Text.AlignVCenter
-                                    horizontalAlignment: Text.AlignHCenter
-                                    text: "→"
-                                    color: theme.textFaint
-                                    font.pixelSize: 10
-                                }
-                                ClickableName {
-                                    width: 92
-                                    height: srow.height
-                                    name: (srow.raw.destination !== undefined
-                                           && srow.raw.destination !== null)
-                                          ? ("" + srow.raw.destination) : ""
-                                    emptyText: "（广播）"
-                                    onClicked: root.serviceJumpRequested(srow.raw.destination)
-                                }
-
-                                Label {
-                                    width: 150
-                                    height: srow.height
-                                    verticalAlignment: Text.AlignVCenter
-                                    text: srow.raw.interface !== undefined
-                                          ? ("" + srow.raw.interface) : ""
-                                    color: theme.textDim
-                                    font.family: "monospace"
-                                    font.pixelSize: 11
-                                    elide: Text.ElideMiddle
-                                }
-
-                                // 一行摘要：PropertiesChanged 会显示"属性 = 值"
-                                Label {
-                                    width: Math.max(60, srow.width - srowContent.fixed)
-                                    height: srow.height
-                                    verticalAlignment: Text.AlignVCenter
-                                    text: (srow.member !== ""
-                                           ? (srow.member + "   ")
-                                           : "") + (srow.summary !== undefined
-                                                    ? ("" + srow.summary) : "")
-                                    color: srow.summary !== undefined && srow.summary !== ""
-                                           ? theme.accent : theme.text
-                                    font.family: "monospace"
-                                    font.pixelSize: 11
-                                    elide: Text.ElideRight
-                                }
-
-                                Label {
-                                    width: 140
-                                    height: srow.height
-                                    verticalAlignment: Text.AlignVCenter
-                                    text: srow.path
-                                    color: theme.textFaint
-                                    font.family: "monospace"
-                                    font.pixelSize: 10
-                                    elide: Text.ElideMiddle
-                                }
-                            }
-                        }
-
-                        onCountChanged: if (following) Qt.callLater(positionViewAtEnd)
-                    }
-
-                    Label {
-                        Layout.fillWidth: true
-                        Layout.preferredHeight: 26
-                        visible: stream.count === 0
-                        horizontalAlignment: Text.AlignHCenter
-                        verticalAlignment: Text.AlignVCenter
-                        text: bridge.monitoring
-                              ? (bridge.onlyWatched && bridge.watches.length > 0
-                                 ? "还没有匹配到监听列表里的消息…"
-                                 : "还没有收到消息…")
-                              : "点顶部的「开始监听」开始接收消息"
-                        color: theme.textFaint
-                        font.pixelSize: 11
-                    }
-                }
+            Label {
+                anchors.fill: parent
+                anchors.margins: 12
+                visible: stream.count === 0
+                horizontalAlignment: Text.AlignHCenter
+                verticalAlignment: Text.AlignVCenter
+                wrapMode: Text.WordWrap
+                text: !bridge.monitoring
+                      ? "点「开始监听」开始接收消息"
+                      : (msgFilter.query !== ""
+                         ? "没有消息命中这个过滤条件：\n" + msgFilter.query
+                         : "还没有收到消息…")
+                color: theme.textFaint
+                font.pixelSize: 11
             }
         }
     }
