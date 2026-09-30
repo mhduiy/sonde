@@ -227,6 +227,22 @@ void flattenOne(const QVariantMap &node, int depth, const QString &label, QVaria
     }
 }
 
+/// PropertiesChanged 的第二个参数是 a{sv}，看里面有没有这个属性名
+bool changedPropsContain(const QVariantMap &m, const QString &prop)
+{
+    const QVariantList args = m.value(QStringLiteral("args")).toList();
+    if (args.size() < 2)
+        return false;
+    const QVariantMap dict = args.at(1).toMap();
+    const QVariantList items = dict.value(QStringLiteral("items")).toList();
+    for (const QVariant &iv : items) {
+        if (iv.toMap().value(QStringLiteral("key")).toMap()
+                .value(QStringLiteral("text")).toString() == prop)
+            return true;
+    }
+    return false;
+}
+
 /// 调用上下文：把「哪个 Bridge + 哪次调用」带过 FFI 边界，回调里再 free。
 struct CallCtx {
     Bridge *bridge;
@@ -517,8 +533,14 @@ bool Bridge::matchesWatch(const QVariantMap &m) const
         const QString kind = w.value(QStringLiteral("kind")).toString();
         const QString wDest = w.value(QStringLiteral("dest")).toString();
 
-        // 先做服务约束：消息的 sender 或 destination 命中即可
-        if (!wDest.isEmpty() && sender != wDest && dest != wDest)
+        // 服务约束：消息的 sender 或 destination 命中即可。
+        // 注意信号的 sender 是**唯一名**，所以还要拿存下来的 owner 比一遍。
+        const QString wUnique = w.value(QStringLiteral("unique")).toString();
+        const bool destOk = wDest.isEmpty()
+                            || sender == wDest || dest == wDest
+                            || (!wUnique.isEmpty()
+                                && (sender == wUnique || dest == wUnique));
+        if (!destOk)
             continue;
 
         if (kind == QLatin1String("service"))
@@ -542,9 +564,12 @@ bool Bridge::matchesWatch(const QVariantMap &m) const
             continue;
         }
         if (kind == QLatin1String("property")) {
-            // 属性变更以 PropertiesChanged 的形式出现，接口是 Properties 而非原接口
+            // 属性变更走标准的 PropertiesChanged（接口是 Properties 而非原接口）。
+            // 还要看 changed_properties 里**确实包含**被监听的那个属性，
+            // 否则同一路径上别的属性变化也会命中。
             if (path == w.value(QStringLiteral("path")).toString()
-                && member == QLatin1String("PropertiesChanged"))
+                && member == QLatin1String("PropertiesChanged")
+                && changedPropsContain(m, w.value(QStringLiteral("member")).toString()))
                 return true;
             continue;
         }
@@ -570,9 +595,14 @@ bool Bridge::addWatch(const QString &kind, const QString &bus, const QString &de
         label = dest + QStringLiteral("  ") + path + QStringLiteral("  ") + iface
                 + QStringLiteral(".") + member;
 
+    // 关键：把公共名解析成唯一名一起存。信号的 sender 是唯一名（:1.x），
+    // 不解析的话"监听某个服务的信号/属性"永远匹配不上。
+    const QString owner = nameOwner(bus.isEmpty() ? m_bus : bus, dest);
+
     m_watches.append(QVariantMap{
         { QStringLiteral("kind"), kind },
         { QStringLiteral("dest"), dest },
+        { QStringLiteral("unique"), owner },
         { QStringLiteral("path"), path },
         { QStringLiteral("iface"), iface },
         { QStringLiteral("member"), member },
@@ -758,6 +788,19 @@ void Bridge::finishCall(quint64 id, const QByteArray &payload)
 }
 
 // ------------------------------------------------------------------- 内省/查询
+
+QString Bridge::nameOwner(const QString &bus, const QString &name) const
+{
+    if (!m_core || name.isEmpty() || name.startsWith(QLatin1Char(':')))
+        return QString();
+    const QByteArray b = utf8(bus);
+    const QByteArray n = utf8(name);
+    const QString json = takeRust(sonde_name_owner(m_core, b.constData(), n.constData()));
+    const QJsonDocument doc = QJsonDocument::fromJson(json.toUtf8());
+    if (!doc.isObject())
+        return QString();
+    return doc.object().value(QStringLiteral("owner")).toString();
+}
 
 QStringList Bridge::listNames(const QString &bus)
 {

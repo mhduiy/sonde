@@ -35,6 +35,8 @@ D.ApplicationWindow {
     }
 
     Component.onCompleted: {
+        if (typeof expandWatch !== "undefined" && expandWatch)
+            watchPane.expanded = true
         if (typeof initialBus !== "undefined" && initialBus !== "")
             root.busName = initialBus
         if (typeof initialService !== "undefined" && initialService !== "")

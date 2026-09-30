@@ -56,6 +56,11 @@ enum Cmd {
         cb: ReplyCb,
         ctx: Ctx,
     },
+    NameOwner {
+        bus: String,
+        name: String,
+        reply: Sender<Result<String, String>>,
+    },
 }
 
 pub struct SondeCore {
@@ -194,6 +199,30 @@ fn list_names(c: &Connection) -> Result<String, String> {
     Ok(serde_json::to_string(&names).unwrap_or_else(|_| "[]".into()))
 }
 
+/// 把公共名解析成唯一名。信号的 sender 是唯一名（:1.x），
+/// 监听服务时必须先解析，否则永远匹配不上。
+fn name_owner(c: &Connection, name: &str) -> Result<String, String> {
+    let body = zvariant::StructureBuilder::new()
+        .append_field(zvariant::Value::from(name))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let m = c
+        .call_method(
+            Some("org.freedesktop.DBus"),
+            "/org/freedesktop/DBus",
+            Some("org.freedesktop.DBus"),
+            "GetNameOwner",
+            &body,
+        )
+        .map_err(|e| e.to_string())?;
+    let msg_body = m.body();
+    let st: zvariant::Structure = msg_body.deserialize().map_err(|e| e.to_string())?;
+    match st.fields().first() {
+        Some(zvariant::Value::Str(s)) => Ok(json!({ "owner": s.to_string() }).to_string()),
+        _ => Ok("{}".to_string()),
+    }
+}
+
 fn introspect(c: &Connection, dest: &str, path: &str) -> Result<String, String> {
     let m = c
         .call_method(
@@ -280,9 +309,15 @@ fn worker(rx: mpsc::Receiver<Cmd>) {
                 dest,
                 path,
                 reply,
-            } => {
-                let r = match get_conn(&mut conns, &bus) {
+            } => {                let r = match get_conn(&mut conns, &bus) {
                     Ok(c) => introspect(c, &dest, &path),
+                    Err(e) => Err(e),
+                };
+                let _ = reply.send(r);
+            }
+            Cmd::NameOwner { bus, name, reply } => {
+                let r = match get_conn(&mut conns, &bus) {
+                    Ok(c) => name_owner(c, &name),
                     Err(e) => Err(e),
                 };
                 let _ = reply.send(r);
@@ -452,6 +487,30 @@ pub extern "C" fn sonde_list_names(core: *mut SondeCore, bus: *const c_char) -> 
         match rx.recv_timeout(Duration::from_secs(10)) {
             Ok(Ok(s)) => s,
             _ => "[]".into(),
+        }
+    })
+}
+
+/// 把公共名解析成唯一名，返回 `{"owner":":1.x"}`。
+#[no_mangle]
+pub extern "C" fn sonde_name_owner(
+    core: *mut SondeCore,
+    bus: *const c_char,
+    name: *const c_char,
+) -> *mut c_char {
+    guard(move || {
+        if core.is_null() {
+            return "{}".into();
+        }
+        let core = unsafe { &*core };
+        let (bus, name) = unsafe { (cstr(bus), cstr(name)) };
+        let (tx, rx) = mpsc::channel();
+        if core.tx.send(Cmd::NameOwner { bus, name, reply: tx }).is_err() {
+            return "{}".into();
+        }
+        match rx.recv_timeout(Duration::from_secs(5)) {
+            Ok(Ok(s)) => s,
+            _ => "{}".into(),
         }
     })
 }

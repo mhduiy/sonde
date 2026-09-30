@@ -30,6 +30,7 @@ void sonde_call(SondeCore *, const char *bus, const char *dest, const char *path
                 const char *argsJson, SondeReplyCb cb, void *ctx);
 int sonde_monitor_start(SondeCore *, const char *bus, SondeBatchCb cb, void *ctx);
 void sonde_monitor_stop(SondeCore *);
+char *sonde_name_owner(SondeCore *, const char *bus, const char *name);
 }
 
 /// 界面与 Rust 核心之间唯一的桥。
@@ -104,6 +105,10 @@ public:
     Q_INVOKABLE void clearWatches();
     Q_INVOKABLE bool isWatched(const QString &kind, const QString &dest, const QString &path,
                                const QString &iface, const QString &member) const;
+
+    /// 把公共名解析成唯一名（:1.x）。
+    /// 信号的 sender 是唯一名，不解析的话"监听某个服务的信号"永远匹配不上。
+    Q_INVOKABLE QString nameOwner(const QString &bus, const QString &name) const;
 
     Q_INVOKABLE QString messageToText(const QVariantMap &msg) const;
     Q_INVOKABLE QString nodeToText(const QVariantMap &node, int indent = 0) const;

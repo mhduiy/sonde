@@ -65,6 +65,10 @@ int main(int argc, char *argv[])
     QCommandLineOption forceTabOpt(QStringLiteral("force-tab"),
                                    QStringLiteral("强制输出页签 table|json|text（自检/截图用）"),
                                    QStringLiteral("name"), QString());
+    QCommandLineOption watchOpt(QStringLiteral("watch"),
+                                QStringLiteral("启动时加一条监听并开始监听，"
+                                               "格式 kind:dest:path:iface:member"),
+                                QStringLiteral("spec"), QString());
     QCommandLineOption sizeOpt(QStringLiteral("size"),
                                QStringLiteral("初始窗口尺寸 WxH（自检/截图用）"),
                                QStringLiteral("WxH"), QString());
@@ -101,6 +105,7 @@ int main(int argc, char *argv[])
     parser.addOption(expandJsonOpt);
     parser.addOption(forceTabOpt);
     parser.addOption(sizeOpt);
+    parser.addOption(watchOpt);
     parser.addOption(shotOpt);
     parser.addOption(delayOpt);
     parser.addOption(dumpOpt);
@@ -162,6 +167,8 @@ int main(int argc, char *argv[])
             initialH = wh.at(1).toInt();
         }
     }
+    engine.rootContext()->setContextProperty(QStringLiteral("expandWatch"),
+                                            parser.isSet(watchOpt));
     engine.rootContext()->setContextProperty(QStringLiteral("initialWidth"), initialW);
     engine.rootContext()->setContextProperty(QStringLiteral("initialHeight"), initialH);
 
@@ -169,6 +176,17 @@ int main(int argc, char *argv[])
     if (engine.rootObjects().isEmpty()) {
         qCritical() << "QML 加载失败，检查目录:" << QStringLiteral(SONDE_QML_DIR);
         return 2;
+    }
+
+    if (parser.isSet(watchOpt)) {
+        const QStringList parts = parser.value(watchOpt).split(QLatin1Char(':'));
+        if (parts.size() >= 5) {
+            bridge->addWatch(parts.at(0), parser.value(busOpt), parts.at(1), parts.at(2),
+                             parts.at(3), parts.at(4));
+            bridge->startMonitor(parser.value(busOpt));
+        } else {
+            qWarning() << "--watch 格式应为 kind:dest:path:iface:member";
+        }
     }
 
     if (parser.isSet(callOpt)) {
