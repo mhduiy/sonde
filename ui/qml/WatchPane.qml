@@ -12,6 +12,9 @@ Rectangle {
     property string bus: "session"
     property bool expanded: false
 
+    /// 点消息里的 sender / 接收者 → 跳到那个服务
+    signal serviceJumpRequested(string name)
+
     implicitHeight: expanded ? 320 : 36
     color: theme.surface
 
@@ -292,6 +295,7 @@ Rectangle {
                             required property string path
                             required property var raw
                             required property var timestampUs
+                            required property string summary
 
                             width: stream.width
                             height: 26
@@ -305,11 +309,19 @@ Rectangle {
                                 popup.open()
                             }
 
-                            contentItem: RowLayout {
-                                spacing: 8
+                            // 用普通 Row + 显式宽度：需要省略的列给 elide，
+                            // 宽度确定才不会像 RowLayout 那样溢出被裁。
+                            contentItem: Row {
+                                id: srowContent
+                                spacing: 6
+
+                                readonly property real fixed:
+                                    66 + 52 + 106 + 92 + 12 + 150 + 140 + 6 * 7
 
                                 Label {
-                                    Layout.preferredWidth: 74
+                                    width: 66
+                                    height: srow.height
+                                    verticalAlignment: Text.AlignVCenter
                                     text: K.clockOf(srow.timestampUs)
                                     color: theme.textFaint
                                     font.family: "monospace"
@@ -317,8 +329,9 @@ Rectangle {
                                 }
 
                                 Rectangle {
-                                    implicitWidth: 52
-                                    implicitHeight: 15
+                                    width: 52
+                                    height: 15
+                                    y: (srow.height - height) / 2
                                     radius: 2
                                     color: "transparent"
                                     border.width: 1
@@ -332,24 +345,65 @@ Rectangle {
                                     }
                                 }
 
+                                // sender → 接收者：都能点，点了跳到那个服务
+                                ClickableName {
+                                    width: 106
+                                    height: srow.height
+                                    name: (srow.raw.sender !== undefined && srow.raw.sender !== null)
+                                          ? ("" + srow.raw.sender) : ""
+                                    onClicked: root.serviceJumpRequested(srow.raw.sender)
+                                }
                                 Label {
-                                    Layout.preferredWidth: 190
-                                    text: srow.iface
+                                    width: 12
+                                    height: srow.height
+                                    verticalAlignment: Text.AlignVCenter
+                                    horizontalAlignment: Text.AlignHCenter
+                                    text: "→"
+                                    color: theme.textFaint
+                                    font.pixelSize: 10
+                                }
+                                ClickableName {
+                                    width: 92
+                                    height: srow.height
+                                    name: (srow.raw.destination !== undefined
+                                           && srow.raw.destination !== null)
+                                          ? ("" + srow.raw.destination) : ""
+                                    emptyText: "（广播）"
+                                    onClicked: root.serviceJumpRequested(srow.raw.destination)
+                                }
+
+                                Label {
+                                    width: 150
+                                    height: srow.height
+                                    verticalAlignment: Text.AlignVCenter
+                                    text: srow.raw.interface !== undefined
+                                          ? ("" + srow.raw.interface) : ""
                                     color: theme.textDim
                                     font.family: "monospace"
                                     font.pixelSize: 11
                                     elide: Text.ElideMiddle
                                 }
+
+                                // 一行摘要：PropertiesChanged 会显示"属性 = 值"
                                 Label {
-                                    Layout.fillWidth: true
-                                    text: srow.member !== "" ? srow.member : "—"
-                                    color: theme.text
+                                    width: Math.max(60, srow.width - srowContent.fixed)
+                                    height: srow.height
+                                    verticalAlignment: Text.AlignVCenter
+                                    text: (srow.member !== ""
+                                           ? (srow.member + "   ")
+                                           : "") + (srow.summary !== undefined
+                                                    ? ("" + srow.summary) : "")
+                                    color: srow.summary !== undefined && srow.summary !== ""
+                                           ? theme.accent : theme.text
                                     font.family: "monospace"
                                     font.pixelSize: 11
                                     elide: Text.ElideRight
                                 }
+
                                 Label {
-                                    Layout.preferredWidth: 150
+                                    width: 140
+                                    height: srow.height
+                                    verticalAlignment: Text.AlignVCenter
                                     text: srow.path
                                     color: theme.textFaint
                                     font.family: "monospace"

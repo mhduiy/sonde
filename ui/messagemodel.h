@@ -25,6 +25,7 @@ public:
         MemberRole,
         SigRole,
         ArgsRole,
+        SummaryRole,  // 一行摘要（属性名=值 / 参数紧凑列表）
         SearchRole,   // 预计算的小写搜索串
     };
 

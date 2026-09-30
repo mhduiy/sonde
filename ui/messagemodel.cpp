@@ -6,14 +6,15 @@ namespace {
 
 QString haystack(const QVariantMap &m)
 {
-    return QStringLiteral("%1 %2 %3 %4 %5 %6 %7")
+    return QStringLiteral("%1 %2 %3 %4 %5 %6 %7 %8")
         .arg(m.value(QStringLiteral("type")).toString(),
              m.value(QStringLiteral("interface")).toString(),
              m.value(QStringLiteral("member")).toString(),
              m.value(QStringLiteral("path")).toString(),
              m.value(QStringLiteral("sender")).toString(),
              m.value(QStringLiteral("destination")).toString(),
-             m.value(QStringLiteral("signature")).toString())
+             m.value(QStringLiteral("signature")).toString(),
+             m.value(QStringLiteral("summary")).toString())
         .toLower();
 }
 
@@ -81,6 +82,8 @@ QVariant MessageModel::data(const QModelIndex &index, int role) const
         return m.value(QStringLiteral("signature"));
     case ArgsRole:
         return m.value(QStringLiteral("args"));
+    case SummaryRole:
+        return m.value(QStringLiteral("summary"));
     case SearchRole:
         return m_search.at(index.row());
     default:
@@ -101,6 +104,7 @@ QHash<int, QByteArray> MessageModel::roleNames() const
         { MemberRole, "member" },
         { SigRole, "signature" },
         { ArgsRole, "args" },
+        { SummaryRole, "summary" },
         { SearchRole, "search" },
     };
 }

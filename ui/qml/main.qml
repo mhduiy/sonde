@@ -244,6 +244,13 @@ D.ApplicationWindow {
             id: watchPane
             Layout.fillWidth: true
             bus: root.busName
+            // 点消息里的 sender / 接收者 → 跳到那个服务
+            onServiceJumpRequested: (name) => {
+                if (name === "")
+                    return
+                root.selectedNode = null
+                tree.setService(root.busName, name)
+            }
         }
     }
 }

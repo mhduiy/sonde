@@ -174,6 +174,16 @@ Rectangle {
         }
     }
 
+    // 服务切换时（比如点了消息里的 sender）滚到它那里去
+    Connections {
+        target: tree
+        function onServiceChanged() {
+            var idx = root.filtered.indexOf(tree.service)
+            if (idx >= 0)
+                Qt.callLater(function () { list.positionViewAtIndex(idx, ListView.Contain) })
+        }
+    }
+
     Menu {
         id: serviceMenu
         property string target: ""

@@ -227,6 +227,17 @@ void flattenOne(const QVariantMap &node, int depth, const QString &label, QVaria
     }
 }
 
+/// 变体剥一层：值节点是 variant 时取内层，摘要里就不用显示多余的 <>
+QVariantMap unwrapVariant(const QVariantMap &n)
+{
+    if (n.value(QStringLiteral("kind")).toString() != QLatin1String("variant"))
+        return n;
+    const QVariantList items = n.value(QStringLiteral("items")).toList();
+    if (items.isEmpty())
+        return n;
+    return items.first().toMap().value(QStringLiteral("node")).toMap();
+}
+
 /// PropertiesChanged 的第二个参数是 a{sv}，看里面有没有这个属性名
 bool changedPropsContain(const QVariantMap &m, const QString &prop)
 {
@@ -498,6 +509,8 @@ void Bridge::handleBatch(const QByteArray &payload)
                 continue;
             ++m_matched;
         }
+        // 摘要在这里算一次：既给界面显示，也进搜索串（可按属性名过滤）
+        m.insert(QStringLiteral("summary"), summarizeMessage(m));
         msgs.append(m);
     }
     emit totalChanged();
@@ -1019,6 +1032,58 @@ QString Bridge::nodesToJson(const QVariantList &nodes) const
     }
     out += QLatin1Char(']');
     return out;
+}
+
+QString Bridge::summarizeMessage(const QVariantMap &m) const
+{
+    const QString member = m.value(QStringLiteral("member")).toString();
+    const QVariantList args = m.value(QStringLiteral("args")).toList();
+    if (args.isEmpty())
+        return QString();
+
+    // 属性变化：把"哪个属性 = 什么值"提出来——看属性监听时这是唯一有用的信息
+    if (member == QLatin1String("PropertiesChanged") && args.size() >= 2) {
+        QStringList parts;
+        const QVariantMap dict = args.at(1).toMap();
+        const QVariantList items = dict.value(QStringLiteral("items")).toList();
+        for (const QVariant &iv : items) {
+            const QVariantMap e = iv.toMap();
+            const QString k = e.value(QStringLiteral("key")).toMap()
+                                  .value(QStringLiteral("text")).toString();
+            if (!k.isEmpty())
+                parts << (k + QStringLiteral(" = ")
+                          + nodeToText(unwrapVariant(
+                                e.value(QStringLiteral("val")).toMap())));
+        }
+        if (args.size() >= 3) {
+            const QVariantList inv = args.at(2).toMap()
+                                         .value(QStringLiteral("items")).toList();
+            for (const QVariant &iv : inv) {
+                const QString k = iv.toMap().value(QStringLiteral("node")).toMap()
+                                      .value(QStringLiteral("text")).toString();
+                if (!k.isEmpty())
+                    parts << (k + QStringLiteral("（失效）"));
+            }
+        }
+        return parts.join(QStringLiteral(",  "));
+    }
+
+    // deepin 的自定义 Changed(ty, value)：第一参数是配置键
+    if (member.endsWith(QLatin1String("Changed")) && args.size() >= 2
+        && args.at(0).toMap().value(QStringLiteral("kind")).toString()
+               == QLatin1String("str")) {
+        const QString k = args.at(0).toMap().value(QStringLiteral("text")).toString();
+        if (!k.isEmpty())
+            return k + QStringLiteral(" = ")
+                   + nodeToText(unwrapVariant(args.at(1).toMap()));
+    }
+
+    QStringList parts;
+    for (int i = 0; i < args.size() && i < 3; ++i)
+        parts << nodeToText(args.at(i).toMap());
+    if (args.size() > 3)
+        parts << QStringLiteral("…");
+    return parts.join(QStringLiteral(",  "));
 }
 
 QString Bridge::messageToText(const QVariantMap &msg) const

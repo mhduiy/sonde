@@ -142,6 +142,8 @@ private:
     /// 由签名生成一个变体参数节点，供 Properties.Set 使用
     QVariantMap makeVariantArg(const QString &typeSig, const QString &valueText) const;
     void flushPending();
+    /// 一行摘要：PropertiesChanged 抽出"属性 = 值"，其它把参数紧凑列出
+    QString summarizeMessage(const QVariantMap &m) const;
     bool matchesWatch(const QVariantMap &msg) const;
 
     SondeCore *m_core = nullptr;
