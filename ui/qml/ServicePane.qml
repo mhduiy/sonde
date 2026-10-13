@@ -89,6 +89,11 @@ Rectangle {
                         implicitWidth: 24
                         implicitHeight: 22
                         onClicked: root.refresh()
+                        // 提示必须写成显式的 D.ToolTip 子项：D.ToolTip 没有
+                        // attached 属性，`ToolTip.visible: hovered` 那种写法由
+                        // Qt 的 QQuickToolTipAttached 实例化，拿到的是**模板**
+                        // ToolTip（白底黑边、没内边距），不是 DTK 的。
+                        // 子项里 `hovered` 也不在作用域，得写 parent.hovered。
                         D.ToolTip {
                             visible: parent.hovered
                             text: "重新列出总线上的服务"

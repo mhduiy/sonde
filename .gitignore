@@ -2,3 +2,6 @@ build/
 rustcore/target/
 *.log
 *.png
+
+# 但 README 里引用的截图要进仓库
+!docs/*.png
