@@ -86,8 +86,10 @@ ColumnLayout {
             onClicked: clip.put(root.row.json === true && root.row.jsonPretty !== ""
                                 ? root.row.jsonPretty
                                 : ("" + root.row.display))
-            ToolTip.visible: hovered
-            ToolTip.text: root.row.json === true ? "复制格式化后的 JSON" : "复制这个值"
+            D.ToolTip {
+                visible: parent.hovered
+                text: root.row.json === true ? "复制格式化后的 JSON" : "复制这个值"
+            }
         }
     }
 

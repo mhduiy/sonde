@@ -143,7 +143,7 @@ Popup {
             font.pixelSize: 11
         }
 
-        ScrollView {
+        D.ScrollView {
             Layout.fillWidth: true
             Layout.fillHeight: true
             Layout.margins: 12

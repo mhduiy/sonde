@@ -58,13 +58,21 @@ Sonde 认出来之后给一组页签，并**自动挑一个默认页签**：
 | 页签 | 什么时候可用 | 内容 |
 |---|---|---|
 | **图片** | 值是图片路径或 `file://` URI | 直接预览（`PreserveAspectFit`），显示像素尺寸，`复制路径` |
-| **表格** | 数组里全是对象 / 对象里全是标量 | 真正的列，可横向滚动；**单元格是图片路径就给缩略图**，`复制` 导出制表符分隔文本 |
+| **表格** | 数组里全是对象 / 对象里全是标量 | 真正的列，横竖都能滚；**单元格是图片路径就给缩略图**；单元格是只读 `TextEdit`，**能划词选中、Ctrl+C**，右键还有「复制这个单元格 / 这一行 / 整表」；`复制` 导出制表符分隔文本 |
 | **JSON** | 内容是合法 JSON | 带行号 + 语法高亮的代码视图，可选中复制 |
-| **文本** | 总是 | 原始字符串 |
+| **原始值** | 总是 | 原样的字符串，不做任何解析 |
+
+四个页签**一直都在**，用不上的置灰（不是藏起来——藏起来整排控件会跟着内容左右跳）。
+页签栏和内容区的高度都不跟内容走：查看区高度由窗口高度算出来（窗口不动它就不动，
+所以轮询刷新、切页签都不会闪），再**夹到"面板里还剩多少地方"以内**——底部监听面板
+一拉高，面板可视区就变矮，不夹的话输出框连同它的滚动条会被挤出可视区，
+表现就是"表格不能滚"。
 
 D-Bus 的 `struct` → JSON 数组、`dict` → JSON 对象，所以 `a{sv}` / `a(...)`
 这类返回值同样进表格——`Properties.GetAll` 出来就是一张属性表。
 两个方向都能滚、都能选中复制，「放大」可以开到全屏。
+
+表格里**拖拽是划词选中**（不再是拖着表格平移），平移用横向滚动条、表头、或 Shift+滚轮。
 
 左侧服务列表：已知服务排在前面，`:1.x` 这类唯一名排到最后。
 
@@ -74,6 +82,45 @@ D-Bus 的 `struct` → JSON 数组、`dict` → JSON 对象，所以 `a{sv}` / `
 按钮、下拉框、输入框、开关、复选框都是 DTK 观感；Sonde 自绘的部分
 （对象树、表格、消息流）通过监听 `DGuiApplicationHelper::paletteTypeChanged`
 跟随 DTK 的深浅色，两边不会脱节。
+
+输出框的页签也不是 QtQuick Controls 的 `TabBar`：`QQuickStyle` 设的是 `Fusion`，
+那套 `TabButton` 出来是灰底方块，和 DTK 的圆角控件放一起很扎眼。改成**一排
+`D.Button`（`checkable`）当分段选择器**——DTK 的按钮 `checked` 时走 ButtonPanel
+的高亮底，正好当"选中"用，禁用态 DTK 自己压到 0.4 透明度。
+
+同一个理由，**右键菜单、提示、滚动条也都换成了 DTK 的**（`QQuickStyle` 是全局的，
+只要是 QtQuick Controls 的控件，出来就是 Fusion 那套）：
+
+| 原来（Controls/Fusion） | 现在 | 备注 |
+|---|---|---|
+| `Menu` / `MenuItem` / `MenuSeparator` | `D.Menu` / `D.MenuItem` / `D.MenuSeparator` | 服务、对象树、监听面板的右键菜单；`visible: false` 的项 DTK 的菜单也认 |
+| `TextField` | `D.TextField` | DTK 的输入框**自带** DTK 样式的右键菜单（复制/剪切/粘贴/全选/撤销/重做） |
+| 只读文本视图（JSON / 原始值） | 自己挂 `D.Menu` | QtQuick 的 `TextEdit` 根本没有右键菜单，给它补上「复制选中 / 全选 / 复制全部」 |
+| `ToolTip.visible/text`（attached） | 显式的 `D.ToolTip { }` 子项 | **`D.ToolTip` 没有 attached 属性**：`ToolTip.visible` 那种写法由 C++ 的 `QQuickToolTipAttached` 实例化，拿到的是**模板 ToolTip**（白底黑边、没内边距），不是 DTK 的 |
+| `ScrollView` / `ScrollBar` | `D.ScrollView` / `D.ScrollBar` | 见下面的坑 |
+| `ItemDelegate` / `CheckBox` / `ComboBox` | `D.ItemDelegate` / `D.CheckBox` / `D.ComboBox` | 行选中、悬停、禁用态跟着 DTK 走 |
+
+换 `D.ToolTip` 时注意：attached 写法要变成显式子项，`visible: hovered` 也得写成
+`parent.hovered`（子项里 `hovered` 不在作用域内）。
+
+**`D.ScrollBar` 的 `AsNeeded` 是"静止时完全透明"**：它的状态机初始是 `hide`
+（`contentItem.opacity = 0`），要 `active` 变 true（真的滚了）才切到可见态；
+而切到 hover 态的条件里又要求 `opacity > 0`——所以鼠标悬停也唤不醒它。
+**一条看不见的滚动条等于没有滚动条**（用户的原话是"表格不能滚"）。凡是"内容装不下
+就得滚"的地方都改成 `policy: D.ScrollBar.AlwaysOn`；DTK 会在 `size >= 1`（装得下）
+时自己藏起来，所以不会一直杵在那儿。
+
+另外，**换掉 `D.ScrollView` 的滚动条实例就得自己摆位置**：DTK 的 `ScrollView` 把
+`x`/`y`/`height` 绑在它**内部**那个实例上，你在使用处 `D.ScrollBar.vertical: D.ScrollBar {}`
+覆盖成新实例后，新实例是 `0×0`——等于还是没有滚动条。要照抄它那三行
+（`parent`/`x`/`y`/`height: availableHeight`）。`ListView`/`Flickable` 的 attached
+滚动条由视图自己摆位置，不用管。
+
+还有一个坑：`ListView` 在**横向 `Flickable` 的内容里**时，它自己的纵向滚动条会被摆到
+内容的右端（`x = contentWidth`），也就是视口外面——够不着。这种嵌套要把纵向滚动条
+挂到 `Flickable` 外面，自己绑 `size`/`position`（`CodeView` 就是这么干的）。
+
+还没换的：放大弹窗仍是 Controls 的 `Popup`（自绘边框，不是菜单/编辑框，先留着）。
 
 构建时 `pkg-config` 找到 `dtk6gui` 就自动链接；没装 DTK 也能构建，会回退到 Qt 默认样式
 （此时标题栏用回 Qt 的 ToolBar，主题开关只能用命令行的 `--dark` / `--light`）。
@@ -310,6 +357,23 @@ D.ApplicationWindow {
 改法：`StackLayout` 只保留有界的 `preferredHeight`/`maximumHeight`；`CodeView`
 换成「`Flickable` + 自己摆的 `ScrollBar`」，位置、尺寸、常显都由自己控制
 （纵向常显，横向按需）。
+
+### 9. 右栏「读取当前值」那一排控件叠在一起
+
+`DetailPane` 属性区那排按钮用的是 `Flow`（窄面板自动换行），但里面的
+「读取于 …」标签写了 `anchors.verticalCenter: parent.verticalCenter`。
+
+Qt 对定位器（`Flow`/`Row`/`Grid`）里的子项禁用 anchors，控制台只会打一行
+
+```
+QML Flow: Cannot specify anchors for items inside Flow. Flow will not function.
+```
+
+然后**整个 Flow 放弃排布**——「复制值」「读取于 …」全叠在「读取当前值」按钮上，
+看着像布局"错乱"。改法：定位器里的子项一律不用 anchors 居中，改成
+`height: 28` + `verticalAlignment: Text.AlignVCenter`。
+
+教训：QML 的这类警告不是"提示"，是"该控件已经坏了"，启动日志里见到就得修。
 
 ---
 

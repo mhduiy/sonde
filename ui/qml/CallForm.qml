@@ -22,6 +22,10 @@ ColumnLayout {
     property string member: ""
     property string sig: ""
 
+    /// 右栏（面板）底边在场景里的 y，由 DetailPane 传进来。
+    /// 用来给输出框算"面板里还剩多少地方"——-1 表示不知道，按窗口高度算。
+    property real viewportBottom: -1
+
     property var nodes: []
     property var rows: []
     property var result: null
@@ -329,8 +333,10 @@ ColumnLayout {
             implicitHeight: 22
             visible: root.nodes.length > 0
             onClicked: clip.put(JSON.stringify(root.nodes, null, 2))
-            ToolTip.visible: hovered
-            ToolTip.text: "复制当前参数树的 JSON，方便确认参数到底长什么样"
+            D.ToolTip {
+                visible: parent.hovered
+                text: "复制当前参数树的 JSON，方便确认参数到底长什么样"
+            }
         }
     }
 
@@ -388,7 +394,7 @@ ColumnLayout {
                     clip: true
                     flickableDirection: Flickable.HorizontalFlick
                     boundsBehavior: Flickable.StopAtBounds
-                    ScrollBar.horizontal: ScrollBar { policy: ScrollBar.AsNeeded }
+                    D.ScrollBar.horizontal: D.ScrollBar { policy: D.ScrollBar.AlwaysOn }
 
                     Row {
                         id: rowHeader
@@ -437,7 +443,7 @@ ColumnLayout {
 
                         Repeater {
                             model: tblock.info.cols
-                            delegate: TextField {
+                            delegate: D.TextField {
                                 required property int index
                                 width: root.cellWidth(tblock.info, index)
                                 height: 28
@@ -454,8 +460,10 @@ ColumnLayout {
                             implicitWidth: 26
                             implicitHeight: 26
                             onClicked: root.removeRecordRow(tblock.p, trow.index)
-                            ToolTip.visible: hovered
-                            ToolTip.text: "删掉这一行"
+                            D.ToolTip {
+                                visible: parent.hovered
+                                text: "删掉这一行"
+                            }
                         }
                     }
                 }
@@ -471,7 +479,7 @@ ColumnLayout {
     }
 
     // ---------------------------------------------------------- 参数编辑区
-    ScrollView {
+    D.ScrollView {
         Layout.fillWidth: true
         Layout.preferredHeight: root.rows.length === 0 ? 0
                               : Math.min(300, root.rows.length * 32 + 8)
@@ -636,7 +644,9 @@ ColumnLayout {
 
     // 结构化输出：表格 / JSON / 文本，自动识别挑默认页签
     ValueOutput {
+        id: resultBox
         Layout.fillWidth: true
+        bottomLimit: root.viewportBottom
         visible: root.result !== null && root.result.ok
                  && root.result.args && root.result.args.length > 0
         nodes: (root.result && root.result.args) ? root.result.args : []

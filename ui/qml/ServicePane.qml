@@ -89,8 +89,10 @@ Rectangle {
                         implicitWidth: 24
                         implicitHeight: 22
                         onClicked: root.refresh()
-                        ToolTip.visible: hovered
-                        ToolTip.text: "重新列出总线上的服务"
+                        D.ToolTip {
+                            visible: parent.hovered
+                            text: "重新列出总线上的服务"
+                        }
                     }
                 }
 
@@ -117,10 +119,10 @@ Rectangle {
             Layout.fillHeight: true
             clip: true
             model: root.filtered
-            ScrollBar.vertical: ScrollBar {}
+            D.ScrollBar.vertical: D.ScrollBar {}
             reuseItems: true
 
-            delegate: ItemDelegate {
+            delegate: D.ItemDelegate {
                 id: row
                 required property var modelData
                 width: list.width
@@ -184,15 +186,15 @@ Rectangle {
         }
     }
 
-    Menu {
+    D.Menu {
         id: serviceMenu
         property string target: ""
 
-        MenuItem {
+        D.MenuItem {
             text: "打开这个服务"
             onTriggered: root.serviceActivated(serviceMenu.target)
         }
-        MenuItem {
+        D.MenuItem {
             text: "加入过滤条件（该服务的消息）"
             onTriggered: {
                 if (typeof K !== "undefined")
@@ -201,8 +203,8 @@ Rectangle {
                     msgFilter.addQuery("svc:" + serviceMenu.target)
             }
         }
-        MenuSeparator {}
-        MenuItem {
+        D.MenuSeparator {}
+        D.MenuItem {
             text: "复制服务名"
             onTriggered: clip.put(serviceMenu.target)
         }

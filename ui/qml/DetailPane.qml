@@ -44,11 +44,17 @@ Rectangle {
     function readProperty(n) {
         if (!n)
             return
+        // 同一个属性的"定时读取"重读：保留上一次的值和输出框，等新值到了直接替换。
+        // 否则每秒先清空再填回来，输出框每秒消失一次——那就是"闪动"。
+        var same = root.propNode !== null && root.propName === n.member
+                   && root.propNode.path === n.path && root.propNode.dest === n.dest
         root.propName = n.member
         root.propError = ""
-        root.propRows = []
-        // 必须同时清掉上一次的值，否则切到别的属性时旧值还留在输出框里
-        root.propNode = null
+        if (!same) {
+            root.propRows = []
+            // 必须同时清掉上一次的值，否则切到别的属性时旧值还留在输出框里
+            root.propNode = null
+        }
         root.propLastId = bridge.callGetProperty(n.bus || root.bus, n.dest, n.path,
                                                 n.iface, n.member)
     }
@@ -164,8 +170,10 @@ Rectangle {
                         text: "＋ 过滤"
                         implicitHeight: 24
                         onClicked: root.addCurrentWatch()
-                        ToolTip.visible: hovered
-                        ToolTip.text: "把这个节点加进监听面板的过滤条件"
+                        D.ToolTip {
+                            visible: parent.hovered
+                            text: "把这个节点加进监听面板的过滤条件"
+                        }
                     }
                 }
 
@@ -209,10 +217,22 @@ Rectangle {
         }
 
         // ---------------------------------------------------------- 内容
-        ScrollView {
+        D.ScrollView {
+            id: detailScroll
             Layout.fillWidth: true
             Layout.fillHeight: true
             visible: root.node !== null
+            // AlwaysOn：DTK 的滚动条在 AsNeeded 下不滚动就完全透明，面板内容比
+            // 窗口高时用户根本看不出这里能滚（内容装得下 DTK 会自己藏起来）。
+            // 注意：换了实例就得自己摆位置——DTK 那套 x/y/height 是写在它内部的
+            // 那个实例上的，覆盖掉之后新实例是 0×0，等于没有滚动条。
+            D.ScrollBar.vertical: D.ScrollBar {
+                parent: detailScroll
+                x: detailScroll.mirrored ? 0 : detailScroll.width - width
+                y: detailScroll.topPadding
+                height: detailScroll.availableHeight
+                policy: D.ScrollBar.AlwaysOn
+            }
             clip: true
 
             ColumnLayout {
@@ -231,6 +251,8 @@ Rectangle {
                     iface: root.node ? root.node.iface : ""
                     member: root.node ? root.node.member : ""
                     sig: root.node ? root.node.inSig : ""
+                    // 面板底在场景里的 y：给调用结果的输出框算"还剩多少地方"
+                    viewportBottom: root.mapToItem(null, 0, 0).y + root.height
                 }
 
                 // ---- 属性：读取 + 轮询 + 写入 ----
@@ -274,8 +296,13 @@ Rectangle {
                         }
                         Row {
                             spacing: 6
+                            // 定位器（Flow/Row）里的子项不能写 anchors：Qt 会判定
+                            // "Cannot specify anchors for items inside Flow"，
+                            // 直接放弃整个 Flow 的排布 → 所有控件叠在一起。
+                            // 要竖向居中就自己给高度 + verticalAlignment。
                             Label {
-                                anchors.verticalCenter: parent.verticalCenter
+                                height: 28
+                                verticalAlignment: Text.AlignVCenter
                                 text: "定时读取"
                                 color: theme.textDim
                                 font.pixelSize: 11
@@ -295,7 +322,9 @@ Rectangle {
                             }
                         }
                         D.ToolButton {
-                            visible: root.propRows.length > 0
+                            // 置灰而不是藏起来：轮询时 propRows 每秒被清一次再填回来，
+                            // 用 visible 就会每秒"消失→出现"，把整排控件推来推去。
+                            enabled: root.propRows.length > 0
                             text: "复制值"
                             implicitWidth: 66
                             implicitHeight: 28
@@ -304,10 +333,12 @@ Rectangle {
                                                                : root.propRows, null, 2))
                         }
                         Label {
-                            anchors.verticalCenter: parent.verticalCenter
-                            visible: root.propReadAt !== ""
-                            text: "读取于 " + root.propReadAt
-                                  + (root.pollMs > 0 ? "（轮询中）" : "")
+                            height: 28
+                            verticalAlignment: Text.AlignVCenter
+                            text: root.propReadAt !== ""
+                                  ? ("读取于 " + root.propReadAt
+                                     + (root.pollMs > 0 ? "（轮询中）" : ""))
+                                  : ""
                             color: theme.textFaint
                             font.pixelSize: 10
                         }
@@ -329,9 +360,11 @@ Rectangle {
                         visible: root.propNode !== null
 
                         ValueOutput {
+                            id: propValueBox
                             Layout.fillWidth: true
+                            // 面板底在场景里的 y：ValueOutput 自己拿它夹高度
+                            bottomLimit: root.mapToItem(null, 0, 0).y + root.height
                             nodes: root.propNode ? [root.propNode] : []
-                            maxHeight: 300
                         }
                     }
 

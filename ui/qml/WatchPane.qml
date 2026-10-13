@@ -69,7 +69,7 @@ Rectangle {
                 }
 
                 // 过滤框：整个面板的核心控件
-                TextField {
+                D.TextField {
                     id: filterField
                     Layout.fillWidth: true
                     Layout.minimumWidth: 110
@@ -79,8 +79,10 @@ Rectangle {
                     font.pixelSize: 11
                     text: msgFilter.query
                     onTextChanged: msgFilter.query = text
-                    ToolTip.visible: hovered
-                    ToolTip.text: "空格分隔多个条件是 AND；不带字段名则在全部内容里找子串"
+                    D.ToolTip {
+                        visible: parent.hovered
+                        text: "空格分隔多个条件是 AND；不带字段名则在全部内容里找子串"
+                    }
                 }
                 D.ToolButton {
                     text: "✕"
@@ -88,8 +90,10 @@ Rectangle {
                     implicitHeight: 24
                     visible: msgFilter.query !== ""
                     onClicked: msgFilter.query = ""
-                    ToolTip.visible: hovered
-                    ToolTip.text: "清空过滤条件"
+                    D.ToolTip {
+                        visible: parent.hovered
+                        text: "清空过滤条件"
+                    }
                 }
 
                 Label {
@@ -111,36 +115,38 @@ Rectangle {
                     implicitWidth: 28
                     implicitHeight: 24
                     onClicked: watchMenu.popup()
-                    ToolTip.visible: hovered
-                    ToolTip.text: "更多"
+                    D.ToolTip {
+                        visible: parent.hovered
+                        text: "更多"
+                    }
                 }
             }
 
-            Menu {
+            D.Menu {
                 id: watchMenu
-                MenuItem {
+                D.MenuItem {
                     text: bridge.monitoring ? "停止监听" : "开始监听"
                     onTriggered: bridge.monitoring
                                  ? bridge.stopMonitor()
                                  : bridge.startMonitor(root.bus)
                 }
-                MenuSeparator {}
-                MenuItem {
+                D.MenuSeparator {}
+                D.MenuItem {
                     text: bridge.paused ? "继续接收" : "暂停接收"
                     enabled: bridge.monitoring
                     onTriggered: bridge.paused = !bridge.paused
                 }
-                MenuItem {
+                D.MenuItem {
                     text: "清空消息"
                     onTriggered: bridge.clear()
                 }
-                MenuItem {
+                D.MenuItem {
                     text: "清空过滤条件"
                     enabled: msgFilter.query !== ""
                     onTriggered: msgFilter.query = ""
                 }
-                MenuSeparator {}
-                MenuItem {
+                D.MenuSeparator {}
+                D.MenuItem {
                     text: "显示 " + msgFilter.count + " / 收到 " + bridge.total
                     enabled: false
                 }
@@ -168,12 +174,12 @@ Rectangle {
                 model: msgFilter
                 reuseItems: true
                 cacheBuffer: 3000
-                ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+                D.ScrollBar.vertical: D.ScrollBar { policy: D.ScrollBar.AsNeeded }
 
                 property bool following: true
                 onMovementEnded: following = atYEnd
 
-                delegate: ItemDelegate {
+                delegate: D.ItemDelegate {
                     id: srow
                     required property int index
                     required property string msgType

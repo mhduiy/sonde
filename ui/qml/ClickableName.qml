@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import org.deepin.dtk 1.0 as D
 
 /// 可点击的服务名：点一下跳到那个服务的对象树。
 /// 接收者为空时显示占位文案（例如广播信号）。
@@ -48,6 +49,8 @@ Item {
         onTapped: root.clicked()
     }
 
-    ToolTip.visible: hover.hovered && root.clickable
-    ToolTip.text: "跳到 " + root.name
+    D.ToolTip {
+        visible: hover.hovered && root.clickable
+        text: "跳到 " + root.name
+    }
 }

@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import org.deepin.dtk 1.0 as D
 
 /// 代码查看器：行号 + 语法高亮 + 可选中复制 + 双向滚动。
 ///
@@ -36,7 +37,8 @@ Item {
     // TextEdit 的行高由字体决定（约 = height + leading），行号栏必须用同一个值
     readonly property int lineH: Math.ceil(fm.height + fm.leading)
 
-    readonly property int barThickness: 11
+    // 预留的滚动条宽度就取 DTK 滚动条自己的宽度，别写死数字
+    readonly property int barThickness: Math.max(6, Math.round(vbar.implicitWidth))
 
     Flickable {
         id: flick
@@ -106,11 +108,11 @@ Item {
         }
     }
 
-    // 纵向：常显，内容长了必须一眼看出能滚
-    ScrollBar {
+    // 纵向：常显，内容长了必须一眼看出能滚。用 DTK 的滚动条（细圆角那种）
+    D.ScrollBar {
         id: vbar
         orientation: Qt.Vertical
-        policy: ScrollBar.AlwaysOn
+        policy: D.ScrollBar.AlwaysOn
         active: true
         anchors.right: parent.right
         anchors.top: parent.top
@@ -121,10 +123,10 @@ Item {
         onPositionChanged: flick.contentY = position * flick.contentHeight
     }
 
-    ScrollBar {
+    D.ScrollBar {
         id: hbar
         orientation: Qt.Horizontal
-        policy: ScrollBar.AsNeeded
+        policy: D.ScrollBar.AsNeeded
         active: true
         anchors.left: parent.left
         anchors.right: parent.right
@@ -134,4 +136,37 @@ Item {
         position: flick.contentX / Math.max(1, flick.contentWidth)
         onPositionChanged: flick.contentX = position * flick.contentWidth
     }
+
+    // ------------------------------------------------------------ 右键菜单
+    // QtQuick 的 TextEdit 本身没有右键菜单，而 Controls 那套（QQuickStyle=Fusion）
+    // 出来是灰底方块，和 DTK 格格不入——所以自己摆一个 D.Menu。
+    // 只吃右键：左键照样能划词选中。
+    MouseArea {
+        anchors.fill: parent
+        acceptedButtons: Qt.RightButton
+        onClicked: function (mouse) {
+            ctxMenu.popup(mouse.x, mouse.y)
+        }
+    }
+
+    D.Menu {
+        id: ctxMenu
+
+        D.MenuItem {
+            text: "复制选中"
+            enabled: code.selectedText !== ""
+            onTriggered: code.copy()
+        }
+        D.MenuItem {
+            text: "全选"
+            onTriggered: code.selectAll()
+        }
+        D.MenuSeparator {}
+        D.MenuItem {
+            text: "复制全部"
+            onTriggered: clip.put(root.text)
+        }
+    }
+
+    Clip { id: clip }
 }

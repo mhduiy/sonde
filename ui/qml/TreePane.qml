@@ -100,7 +100,7 @@ Rectangle {
                     elide: Text.ElideMiddle
                 }
 
-                TextField {
+                D.TextField {
                     Layout.preferredWidth: 130
                     Layout.minimumWidth: 0
                     Layout.maximumWidth: 150
@@ -111,14 +111,16 @@ Rectangle {
                     onTextChanged: tree.filter = text
                 }
 
-                CheckBox {
+                D.CheckBox {
                     text: "精简"
                     implicitHeight: 26
                     checked: tree.hideStandard
                     onToggled: tree.hideStandard = checked
                     font.pixelSize: 11
-                    ToolTip.visible: hovered
-                    ToolTip.text: "隐藏 org.freedesktop.DBus.* 标准接口"
+                    D.ToolTip {
+                        visible: parent.hovered
+                        text: "隐藏 org.freedesktop.DBus.* 标准接口"
+                    }
                 }
 
                 // 展开/折叠/定位 这些收进菜单，窄面板才放得下
@@ -128,8 +130,10 @@ Rectangle {
                     implicitHeight: 24
                     enabled: tree.service !== ""
                     onClicked: treeMenu.popup()
-                    ToolTip.visible: hovered
-                    ToolTip.text: "更多操作"
+                    D.ToolTip {
+                        visible: parent.hovered
+                        text: "更多操作"
+                    }
                 }
             }
 
@@ -182,11 +186,11 @@ Rectangle {
             visible: tree.rows.length > 0
             clip: true
             model: tree.rows
-            ScrollBar.vertical: ScrollBar {}
+            D.ScrollBar.vertical: D.ScrollBar {}
             reuseItems: true
             cacheBuffer: 2000
 
-            delegate: ItemDelegate {
+            delegate: D.ItemDelegate {
                 id: row
                 required property var modelData
 
@@ -319,33 +323,35 @@ Rectangle {
                     }
                 }
 
-                ToolTip.visible: hovered
-                ToolTip.delay: 900
-                ToolTip.text: root.buildTooltip(row.modelData)
+                D.ToolTip {
+                    visible: parent.hovered
+                    delay: 900
+                    text: root.buildTooltip(row.modelData)
+                }
             }
         }
     }
 
     // ------------------------------------------------------------------ 头部菜单
-    Menu {
+    D.Menu {
         id: treeMenu
-        MenuItem {
+        D.MenuItem {
             text: "定位到本服务的对象"
             enabled: tree.service !== ""
             onTriggered: tree.locateService()
         }
-        MenuItem {
+        D.MenuItem {
             text: "全部展开"
             enabled: tree.service !== ""
             onTriggered: tree.expandAll()
         }
-        MenuItem {
+        D.MenuItem {
             text: "全部折叠"
             enabled: tree.service !== ""
             onTriggered: tree.collapseAll()
         }
-        MenuSeparator {}
-        MenuItem {
+        D.MenuSeparator {}
+        D.MenuItem {
             text: "重新内省"
             enabled: tree.service !== ""
             onTriggered: tree.refresh()
@@ -353,10 +359,10 @@ Rectangle {
     }
 
     // ------------------------------------------------------------------ 右键菜单
-    Menu {
+    D.Menu {
         id: nodeMenu
 
-        MenuItem {
+        D.MenuItem {
             text: "加入过滤条件"
             visible: root.menuTarget !== null && root.menuTarget.kind !== "arg"
             onTriggered: {
@@ -364,32 +370,32 @@ Rectangle {
                 msgFilter.addQuery(K.filterTerm(n.kind, n.dest, n.path, n.iface, n.member))
             }
         }
-        MenuItem {
+        D.MenuItem {
             text: "读取该属性"
             visible: root.menuTarget !== null && root.menuTarget.kind === "property"
             onTriggered: root.readPropertyRequested(root.menuTarget)
         }
-        MenuItem {
+        D.MenuItem {
             text: root.menuTarget !== null && root.menuTarget.expanded ? "折叠" : "展开"
             visible: root.menuTarget !== null && root.menuTarget.kind !== "arg"
             onTriggered: tree.toggle(root.menuTarget.id)
         }
-        MenuSeparator {}
-        MenuItem {
+        D.MenuSeparator {}
+        D.MenuItem {
             text: "复制名称"
             onTriggered: clip.put(root.menuTarget ? root.menuTarget.name : "")
         }
-        MenuItem {
+        D.MenuItem {
             text: "复制签名"
             visible: root.menuTarget !== null && root.menuTarget.argText !== ""
             onTriggered: clip.put(root.menuTarget.argText + " " + root.menuTarget.retText)
         }
-        MenuItem {
+        D.MenuItem {
             text: "复制路径"
             visible: root.menuTarget !== null && root.menuTarget.path !== ""
             onTriggered: clip.put(root.menuTarget ? root.menuTarget.path : "")
         }
-        MenuItem {
+        D.MenuItem {
             text: "复制「接口.成员」"
             visible: root.menuTarget !== null && root.menuTarget.iface !== ""
                      && root.menuTarget.member !== ""

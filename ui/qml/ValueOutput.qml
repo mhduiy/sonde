@@ -17,7 +17,44 @@ ColumnLayout {
     property var nodes: []          // 值节点数组（Rust 解码出来的）
     property string singleText: ""  // 或者直接喂一段文本
     property string tab: ""         // "" = 跟随自动识别
-    property int maxHeight: 340
+    property int maxHeight: -1      // >0 时固定用这个高度，否则按窗口高度算
+
+    /// 查看区高度：由窗口高度算出来的**固定值**，绝不用内容撑。
+    /// 内容一变高度就变，下面的控件被顶来顶去——那才是"闪动"。
+    /// 窗口大小不变 → 这个值就不变，页签怎么切、轮询怎么刷都不动。
+    ///
+    /// 再夹一道 `bottomLimit`（面板底边，调用方传）：不然把底部的监听面板拉高，
+    /// 输出框就被挤出可视区，滚动条跟着一起看不见——表现就是"表格不能滚"。
+    readonly property int boxHeight: {
+        var cap = root.maxHeight > 0
+                  ? root.maxHeight
+                  : Math.max(180, Math.min(420, Math.round((Window.height || 900) * 0.32)))
+        if (root.bottomLimit <= 0)
+            return cap
+        // 内容区（StackLayout）自己在场景里的位置：它上面是页签栏
+        var room = root.bottomLimit - contentBox.mapToItem(null, 0, 0).y - 8
+        // 下限只保 3 行左右：再小就没法用，但宁可小也别让滚动条被挤出可视区
+        return Math.max(100, Math.min(cap, room))
+    }
+
+    /// 面板（右栏）底边在场景里的 y；-1 = 不知道，就按窗口高度算。
+    /// 有它才能把高度夹到"面板里还剩多少地方"：不然底部监听面板一拉高，
+    /// 输出框连同它的滚动条就被挤出可视区——表现就是"表格不能滚"。
+    property real bottomLimit: -1
+
+    /// 页签栏右边那行信息（尺寸 / 行数）。合成一段文本，长度变了也只影响
+    /// 它自己的省略号，不会推动旁边的按钮。
+    readonly property string infoText: {
+        if (root.activeTab === "image")
+            return preview.status === Image.Loading ? "加载中…"
+                  : (preview.status === Image.Error ? "读不到文件"
+                     : (preview.sourceSize.width + " × " + preview.sourceSize.height))
+        if (root.activeTab === "table")
+            return root.table.rows.length + " 行 × " + root.table.cols.length + " 列"
+        if (root.activeTab === "json")
+            return bridge.jsonLines(root.jsonText, root.jsonColors()).length + " 行"
+        return ""
+    }
 
     spacing: 6
 
@@ -204,67 +241,58 @@ ColumnLayout {
     }
 
     onJsonTextChanged: {
+        // 换内容就回到自动识别的页签
         root.tab = ""
-        // 用户点过页签会破坏 currentIndex 的绑定，换内容时重新接上
-        tabs.currentIndex = Qt.binding(function () { return root.activeIndex })
     }
 
     // ------------------------------------------------------------ 页签栏
-    // Flow 而不是 RowLayout：面板窄的时候自动换行，不会溢出被裁
+    // 用 DTK 的按钮做分段选择器。不用 QtQuick.Controls 的 TabBar/TabButton：
+    // main.cpp 里 QQuickStyle 设的是 Fusion，那套 TabButton 出来是灰底方块，
+    // 跟 DTK 的圆角控件放一起很难看；D.Button 自带 DTK 样式，checked 时
+    // 走 ButtonPanel 的高亮底，正好当"选中"用。
+    // 四个页签**常驻**，不支持的置灰（DTK 自己会把 disabled 压到 0.4 透明度），
+    // 不隐藏——隐藏会让后面所有控件左右横跳。
+    //
+    // 用 Flow 而不是 RowLayout：面板拖窄时换行，而不是把「复制」裁掉。
+    // 这里所有子项的宽度都是**定值**（信息那格定宽 + 省略号），所以换行只跟
+    // 面板宽度有关，跟内容无关——数据怎么刷，这一排都不会重排/闪动。
     Flow {
         Layout.fillWidth: true
-        spacing: 8
+        spacing: 4
 
-        TabBar {
-            id: tabs
-            currentIndex: root.activeIndex
-            // 不用 TabBar 的信号（Controls 的 TabBar 没有 activated），
-            // 让每个 TabButton 自己响应点击——clicked 只在用户点击时触发，
-            // 不会和 activeTab 形成绑定循环。
+        Repeater {
+            model: [
+                { key: "image", label: "图片", ok: root.hasImage },
+                { key: "table", label: "表格", ok: root.tableable },
+                { key: "json", label: "JSON", ok: root.parsed !== null },
+                { key: "text", label: "原始值", ok: true }
+            ]
 
-            TabButton {
-                text: "图片"
-                implicitWidth: 56
-                visible: root.hasImage
-                onClicked: root.tab = "image"
-            }
-            TabButton {
-                text: "表格"
-                implicitWidth: 56
-                enabled: root.tableable
-                visible: root.tableable
-                onClicked: root.tab = "table"
-            }
-            TabButton {
-                text: "JSON"
-                implicitWidth: 56
-                enabled: root.parsed !== null
-                onClicked: root.tab = "json"
-            }
-            TabButton {
-                text: "文本"
-                implicitWidth: 56
-                onClicked: root.tab = "text"
+            delegate: D.Button {
+                required property var modelData
+                text: modelData.label
+                checkable: true
+                enabled: modelData.ok
+                implicitWidth: 52
+                implicitHeight: 28
+                checked: root.activeTab === modelData.key
+                onClicked: {
+                    root.tab = modelData.key
+                    // 点击会就地改掉 checked、弄断绑定，这里重新接上
+                    checked = Qt.binding(function () {
+                        return root.activeTab === modelData.key
+                    })
+                }
             }
         }
 
         Label {
-            visible: root.activeTab === "image" && root.width > 380
-            text: preview.status === Image.Loading ? "加载中…"
-                  : (preview.status === Image.Error ? "读不到文件"
-                     : (preview.sourceSize.width + " × " + preview.sourceSize.height))
-            color: theme.textFaint
-            font.pixelSize: 10
-        }
-        Label {
-            visible: root.activeTab === "table" && root.width > 380
-            text: root.table.rows.length + " 行 × " + root.table.cols.length + " 列"
-            color: theme.textFaint
-            font.pixelSize: 10
-        }
-        Label {
-            visible: root.activeTab === "json" && root.width > 380
-            text: bridge.jsonLines(root.jsonText, root.jsonColors()).length + " 行"
+            width: 76
+            height: 28
+            verticalAlignment: Text.AlignVCenter
+            horizontalAlignment: Text.AlignRight
+            elide: Text.ElideRight
+            text: root.infoText
             color: theme.textFaint
             font.pixelSize: 10
         }
@@ -272,14 +300,15 @@ ColumnLayout {
         D.ToolButton {
             text: "放大"
             implicitWidth: 46
-            implicitHeight: 22
-            visible: root.activeTab === "json" || root.activeTab === "table"
+            implicitHeight: 28
+            // 置灰而不是藏起来：藏起来会把"复制"顶到左边，跟着内容闪
+            enabled: root.activeTab === "json" || root.activeTab === "table"
             onClicked: viewer.open()
         }
         D.ToolButton {
             text: "复制"
             implicitWidth: 46
-            implicitHeight: 22
+            implicitHeight: 28
             onClicked: {
                 if (root.activeTab === "json")
                     clip.put(root.jsonText)
@@ -302,26 +331,33 @@ ColumnLayout {
     }
 
     function tableAsTsv() {
-        var cols = root.table.cols
-        var rows = root.table.rows
-        var lines = [cols.join("\t")]
-        for (var r = 0; r < rows.length; ++r) {
-            var cells = []
-            for (var c = 0; c < cols.length; ++c)
-                cells.push(root.cellText(rows[r][cols[c]]))
-            lines.push(cells.join("\t"))
-        }
+        var lines = [root.table.cols.join("\t")]
+        for (var r = 0; r < root.table.rows.length; ++r)
+            lines.push(root.rowAsTsv(r))
         return lines.join("\n")
+    }
+
+    function rowAsTsv(i) {
+        var cols = root.table.cols
+        var row = root.table.rows[i]
+        if (!row)
+            return ""
+        var cells = []
+        for (var c = 0; c < cols.length; ++c)
+            cells.push(root.cellText(row[cols[c]]))
+        return cells.join("\t")
     }
 
     // ------------------------------------------------------------ 内容
     StackLayout {
+        id: contentBox
         Layout.fillWidth: true
         // 不设 fillHeight：这是个有界高度的查看区，内部自己滚。
         // 之前设了 fillHeight，在 DetailPane 的 ScrollView 里高度被拉到内容高度，
         // 内层 ScrollView 就没有可滚区间了（表现就是"没有滚动条"）。
-        Layout.preferredHeight: root.maxHeight
-        Layout.maximumHeight: root.maxHeight
+        // 高度固定（boxHeight 只跟窗口大小走），内容怎么变都不动
+        Layout.preferredHeight: root.boxHeight
+        Layout.maximumHeight: root.boxHeight
         currentIndex: root.activeIndex
 
         // ---- 图片 ----
@@ -379,14 +415,18 @@ ColumnLayout {
 
             // 横向用 Flickable（只吃横向手势），纵向交给内层 ListView
             Flickable {
+                id: tableFlick
                 anchors.fill: parent
                 anchors.margins: 1
                 contentWidth: root.tableWidth
-                contentHeight: root.maxHeight
+                contentHeight: root.boxHeight
                 flickableDirection: Flickable.HorizontalFlick
                 boundsBehavior: Flickable.StopAtBounds
                 clip: true
-                ScrollBar.horizontal: ScrollBar { policy: ScrollBar.AsNeeded }
+                // AlwaysOn，不能用 AsNeeded：DTK 的滚动条在 AsNeeded 下初始是
+                // "hide" 态（contentItem.opacity = 0），要等 active 变 true 才显形，
+                // 而鼠标又摸不到一条看不见的条 → 表现就是"表格不能滚"
+                D.ScrollBar.horizontal: D.ScrollBar { policy: D.ScrollBar.AlwaysOn }
 
                 Column {
                     width: root.tableWidth
@@ -432,15 +472,16 @@ ColumnLayout {
                     }
 
                     ListView {
+                        id: tableList
                         width: root.tableWidth
-                        height: Math.max(30, root.maxHeight - 28)
+                        height: Math.max(30, root.boxHeight - 28)
                         model: root.table.rows
                         clip: true
                         reuseItems: true
-                        ScrollBar.vertical: ScrollBar { policy: ScrollBar.AlwaysOn }
 
                         delegate: Row {
                             id: tableRow
+                            required property int index
                             required property var modelData
 
                             Repeater {
@@ -470,6 +511,8 @@ ColumnLayout {
                                             root.imageSourceOf(tableRow.modelData[modelData])
                                         readonly property bool showThumb:
                                             img !== "" && root.colWidths[index] >= 80
+                                        readonly property string value:
+                                            root.cellText(tableRow.modelData[modelData])
 
                                         // 缩略图：务必限制 sourceSize，
                                         // 否则每行都按原始分辨率解码（壁纸动辄几千万像素）
@@ -486,16 +529,36 @@ ColumnLayout {
                                             cache: true
                                         }
 
-                                        Label {
+                                        // 用 TextEdit 而不是 Label：Label 是纯展示，
+                                        // 永远选不了、复制不了。这里只读 + 可划词选中，
+                                        // Ctrl+C 直接复制选中的部分。
+                                        TextEdit {
+                                            id: cellText
                                             width: Math.max(0, cellRow.width - x
                                                                - (cellRow.showThumb ? 36 : 0))
                                             height: cellRow.height
-                                            verticalAlignment: Text.AlignVCenter
-                                            text: root.cellText(tableRow.modelData[modelData])
+                                            verticalAlignment: TextEdit.AlignVCenter
+                                            text: cellRow.value
                                             color: theme.text
                                             font.family: "monospace"
                                             font.pixelSize: 11
-                                            elide: Text.ElideRight
+                                            readOnly: true
+                                            selectByMouse: true
+                                            persistentSelection: true
+                                            wrapMode: TextEdit.NoWrap
+                                            clip: true
+
+                                            MouseArea {
+                                                anchors.fill: parent
+                                                acceptedButtons: Qt.RightButton
+                                                onClicked: function (mouse) {
+                                                    cellMenu.cellValue =
+                                                        cellText.selectedText !== ""
+                                                        ? cellText.selectedText : cellRow.value
+                                                    cellMenu.rowValue = root.rowAsTsv(tableRow.index)
+                                                    cellMenu.popup(mouse.x, mouse.y)
+                                                }
+                                            }
                                         }
                                     }
                                 }
@@ -503,6 +566,22 @@ ColumnLayout {
                         }
                     }
                 }
+            }
+
+            // 纵向滚动条挂在 Flickable **外面**：ListView 在横向 Flickable 的内容里，
+            // 它自己的滚动条会被摆到内容右端（x = contentWidth 处）→ 视口外，鼠标够不着
+            D.ScrollBar {
+                id: tableVBar
+                orientation: Qt.Vertical
+                policy: D.ScrollBar.AlwaysOn
+                active: true
+                anchors.right: parent.right
+                anchors.rightMargin: 2
+                y: tableFlick.y + tableList.y
+                height: tableList.height
+                size: Math.min(1, tableList.height / Math.max(1, tableList.contentHeight))
+                position: tableList.contentY / Math.max(1, tableList.contentHeight)
+                onPositionChanged: tableList.contentY = position * tableList.contentHeight
             }
         }
 
@@ -520,18 +599,30 @@ ColumnLayout {
             }
         }
 
-        // ---- 文本 ----
+        // ---- 原始值 ----
         Rectangle {
             color: theme.bg
             border.color: theme.border
             radius: 3
             clip: true
 
-            ScrollView {
+            D.ScrollView {
+                id: rawScroll
                 anchors.fill: parent
                 anchors.margins: 2
                 clip: true
+                // 跟表格那边一个道理：DTK 的滚动条在 AsNeeded 下静止时是全透明的，
+                // 长文本看不出能滚。换了实例就得自己摆位置（DTK 那套 x/y/height
+                // 绑在它内部的实例上）。
+                D.ScrollBar.vertical: D.ScrollBar {
+                    parent: rawScroll
+                    x: rawScroll.mirrored ? 0 : rawScroll.width - width
+                    y: rawScroll.topPadding
+                    height: rawScroll.availableHeight
+                    policy: D.ScrollBar.AlwaysOn
+                }
                 TextEdit {
+                    id: rawText
                     width: Math.max(200, parent.width - 8)
                     text: root.plainText
                     readOnly: true
@@ -543,6 +634,56 @@ ColumnLayout {
                     font.pixelSize: 12
                 }
             }
+
+            // 右键菜单：DTK 的，跟别处一致（QtQuick 的 TextEdit 没有自带菜单）
+            MouseArea {
+                anchors.fill: parent
+                acceptedButtons: Qt.RightButton
+                onClicked: function (mouse) {
+                    rawMenu.popup(mouse.x, mouse.y)
+                }
+            }
+
+            D.Menu {
+                id: rawMenu
+
+                D.MenuItem {
+                    text: "复制选中"
+                    enabled: rawText.selectedText !== ""
+                    onTriggered: rawText.copy()
+                }
+                D.MenuItem {
+                    text: "全选"
+                    onTriggered: rawText.selectAll()
+                }
+                D.MenuSeparator {}
+                D.MenuItem {
+                    text: "复制全部"
+                    onTriggered: clip.put(root.plainText)
+                }
+            }
+        }
+    }
+
+    // 表格单元格的右键菜单（跟别处一样用 DTK 的）
+    D.Menu {
+        id: cellMenu
+
+        property string cellValue: ""
+        property string rowValue: ""
+
+        D.MenuItem {
+            text: "复制这个单元格"
+            onTriggered: clip.put(cellMenu.cellValue)
+        }
+        D.MenuItem {
+            text: "复制这一行（制表符分隔）"
+            onTriggered: clip.put(cellMenu.rowValue)
+        }
+        D.MenuSeparator {}
+        D.MenuItem {
+            text: "复制整表（制表符分隔）"
+            onTriggered: clip.put(root.tableAsTsv())
         }
     }
 
