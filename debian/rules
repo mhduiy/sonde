@@ -1,0 +1,16 @@
+#!/usr/bin/make -f
+
+# 本地用 rustup 构建时，cargo 通常不在 dpkg-buildpackage 的 PATH 里。
+# 系统级 cargo（Build-Depends）存在时这一行不会造成影响。
+export PATH := $(HOME)/.cargo/bin:$(PATH)
+
+# 某些构建环境里 rustup 的 shim 读不到默认 toolchain（settings.toml），
+# 显式指定当前默认 toolchain 可绕开。没有 rustup（用系统 cargo）时为空，无副作用。
+RUSTUP_TOOLCHAIN ?= $(shell rustup show active-toolchain 2>/dev/null | awk '{print $$1}')
+export RUSTUP_TOOLCHAIN
+
+%:
+	dh $@ --buildsystem=cmake
+
+override_dh_auto_configure:
+	dh_auto_configure -- -DCMAKE_BUILD_TYPE=Release

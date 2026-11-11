@@ -5,3 +5,15 @@ rustcore/target/
 
 # 但 README 里引用的截图要进仓库
 !docs/*.png
+
+# Debian 打包产物
+debian/.debhelper/
+debian/debhelper-build-stamp
+debian/*.debhelper.log
+debian/files
+debian/sonde/
+debian/tmp/
+obj-*/
+*.deb
+*.buildinfo
+*.changes

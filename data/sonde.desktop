@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Sonde
+GenericName=D-Bus Inspector
+Comment=Inspect and debug D-Bus services, objects and messages
+Comment[zh_CN]=D-Bus 观察台：浏览服务、对象树，读写属性、调用方法并实时查看消息
+Exec=sonde
+Icon=sonde
+Terminal=false
+Categories=Development;Debugger;
+Keywords=D-Bus;DBus;debug;inspect;bus;monitor;
+StartupNotify=true

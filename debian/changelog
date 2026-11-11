@@ -1,0 +1,8 @@
+sonde (0.2.0) unstable; urgency=medium
+
+  * Initial Debian packaging.
+    - Install the binary, QML sources, desktop entry and icon via CMake.
+    - Resolve the QML directory at runtime: environment variable, source
+      tree during development, then the installed share/sonde/qml location.
+
+ -- Fangxun Zhao <zhaofangxun@uniontech.com>  Wed, 11 Nov 2026 00:00:00 +0800
