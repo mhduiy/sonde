@@ -68,6 +68,19 @@
 
 QML 从源码目录加载（`SONDE_QML_DIR`），改完即生效，不用重编。
 
+### Debian 打包
+
+仓库自带 `debian/` 打包配置（native 包，版本随 `CMakeLists.txt`）：
+
+```bash
+sudo apt build-dep .          # 或手动装：debhelper cmake qt6-base-dev qt6-declarative-dev libdtk6gui-dev cargo rustc
+dpkg-buildpackage -b -us -uc  # 产物 sonde_<版本>_amd64.deb 在仓库上一级目录
+```
+
+安装后二进制在 `/usr/bin/sonde`，QML 在 `/usr/share/sonde/qml`，并带桌面入口、
+hicolor 图标与 manpage。运行时 QML 查找顺序为：环境变量 `SONDE_QML_DIR` →
+源码目录（开发时）→ 安装目录。
+
 ### 命令行
 
 | 参数 | 说明 |

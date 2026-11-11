@@ -1,0 +1,32 @@
+Source: sonde
+Section: utils
+Priority: optional
+Maintainer: Fangxun Zhao <zhaofangxun@uniontech.com>
+Build-Depends: debhelper-compat (= 13),
+               cmake,
+               pkg-config,
+               qt6-base-dev,
+               qt6-declarative-dev,
+               libdtk6gui-dev,
+               cargo,
+               rustc
+Standards-Version: 4.6.2
+Rules-Requires-Root: no
+Homepage: https://github.com/mhduiy/sonde
+
+Package: sonde
+Architecture: any
+Depends: ${shlibs:Depends},
+         ${misc:Depends},
+         libdtk6declarative,
+         qml6-module-qtqml-workerscript,
+         qml6-module-qtquick,
+         qml6-module-qtquick-window,
+         qml6-module-qtquick-controls,
+         qml6-module-qtquick-layouts,
+         qml6-module-qtquick-templates
+Description: D-Bus inspection and debugging tool
+ Sonde is a graphical D-Bus observer.  It browses services, object
+ paths, interfaces, methods, signals and properties; reads and writes
+ properties; calls methods with signature-driven argument forms; and
+ shows the live message stream with field-based filtering.

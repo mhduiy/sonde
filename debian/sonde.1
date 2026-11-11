@@ -1,0 +1,53 @@
+.TH SONDE 1 "2026-11-11" "sonde 0.2.0" "Sonde Manual"
+.SH NAME
+sonde \- D-Bus inspection and debugging tool
+.SH SYNOPSIS
+.B sonde
+.RI [ options ]
+.SH DESCRIPTION
+.B Sonde
+is a graphical D-Bus observer.  It browses services, object paths,
+interfaces, methods, signals and properties; reads and writes properties;
+calls methods with signature-driven argument forms; and shows the live
+message stream with field-based filtering.
+.SH OPTIONS
+.TP
+.BR \-\-bus " " session|system
+Bus to monitor (default: session).
+.TP
+.BI \-\-service " dest"
+Open this service on startup.
+.TP
+.B \-\-dark ", " \-\-light
+Select the theme explicitly (default: follow the system).
+.TP
+.BI \-\-filter " query"
+Set the message filter expression and start monitoring.
+.TP
+.BI \-\-call " iface.member"
+Call a method without opening the UI and print the result as JSON.
+.TP
+.BI \-\-call-dest " dest"
+.TQ
+.BI \-\-call-path " path"
+.TQ
+.BI \-\-call-sig " sig"
+.TQ
+.BI \-\-call-args " json"
+Destination, object path, argument signature and JSON argument array
+for
+.BR \-\-call .
+.TP
+.BR \-\-demo
+Self-test: start monitoring, open a service and run one method call.
+.TP
+.BI \-\-screenshot " path"
+Render one frame, save it as a PNG and exit.
+.TP
+.BR \-\-dump-tree
+Print the rows of the introspection tree and exit.
+.SH SEE ALSO
+The project README at
+.UR https://github.com/mhduiy/sonde
+.UE
+.

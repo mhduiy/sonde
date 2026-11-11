@@ -5,6 +5,10 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
 
+include(GNUInstallDirs)
+
+set(SONDE_QML_INSTALL_DIR "${CMAKE_INSTALL_DATADIR}/sonde/qml")
+
 find_package(Qt6 REQUIRED COMPONENTS Quick Qml QuickControls2 Gui)
 find_package(Threads REQUIRED)
 
@@ -33,9 +37,11 @@ add_executable(sonde ${SONDE_UI_SOURCES})
 
 target_include_directories(sonde PRIVATE "${CMAKE_SOURCE_DIR}/ui")
 
-# QML 从源码目录加载，开发期改完即生效，无需重新编译。
+# QML 优先从源码目录加载（开发期改完即生效）；安装后用 share/sonde/qml。
+# 运行时还可用环境变量 SONDE_QML_DIR 覆盖。
 target_compile_definitions(sonde PRIVATE
-    SONDE_QML_DIR="${CMAKE_SOURCE_DIR}/ui/qml")
+    SONDE_QML_DIR="${CMAKE_SOURCE_DIR}/ui/qml"
+    SONDE_INSTALL_QML_DIR="${CMAKE_INSTALL_FULL_DATADIR}/sonde/qml")
 
 add_dependencies(sonde sonde_rust)
 
@@ -61,3 +67,11 @@ target_link_libraries(sonde PRIVATE
     Threads::Threads
     ${CMAKE_DL_LIBS}
     m)
+
+install(TARGETS sonde RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
+install(DIRECTORY "${CMAKE_SOURCE_DIR}/ui/qml/"
+        DESTINATION "${SONDE_QML_INSTALL_DIR}")
+install(FILES "${CMAKE_SOURCE_DIR}/data/sonde.desktop"
+        DESTINATION "${CMAKE_INSTALL_DATADIR}/applications")
+install(FILES "${CMAKE_SOURCE_DIR}/data/sonde.svg"
+        DESTINATION "${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps")

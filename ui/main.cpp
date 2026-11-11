@@ -1,5 +1,6 @@
 #include <QCommandLineParser>
 #include <QDebug>
+#include <QFileInfo>
 #include <QGuiApplication>
 #include <QImage>
 #include <QJsonArray>
@@ -26,6 +27,20 @@ namespace {
 #ifdef SONDE_WITH_DTK
 using DtkHelper = Dtk::Gui::DGuiApplicationHelper;
 #endif
+
+// QML 目录查找顺序：环境变量 → 源码目录（开发）→ 安装目录（打包后）。
+QString resolveQmlDir()
+{
+    const QString fromEnv = qEnvironmentVariable("SONDE_QML_DIR");
+    if (!fromEnv.isEmpty())
+        return fromEnv;
+
+    const QString sourceDir = QStringLiteral(SONDE_QML_DIR);
+    if (QFileInfo::exists(sourceDir + QStringLiteral("/main.qml")))
+        return sourceDir;
+
+    return QStringLiteral(SONDE_INSTALL_QML_DIR);
+}
 
 } // namespace
 
@@ -172,9 +187,10 @@ int main(int argc, char *argv[])
     engine.rootContext()->setContextProperty(QStringLiteral("initialWidth"), initialW);
     engine.rootContext()->setContextProperty(QStringLiteral("initialHeight"), initialH);
 
-    engine.load(QUrl::fromLocalFile(QStringLiteral(SONDE_QML_DIR) + QStringLiteral("/main.qml")));
+    const QString qmlDir = resolveQmlDir();
+    engine.load(QUrl::fromLocalFile(qmlDir + QStringLiteral("/main.qml")));
     if (engine.rootObjects().isEmpty()) {
-        qCritical() << "QML 加载失败，检查目录:" << QStringLiteral(SONDE_QML_DIR);
+        qCritical() << "QML 加载失败，检查目录:" << qmlDir;
         return 2;
     }
 
